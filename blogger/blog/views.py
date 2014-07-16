@@ -6,6 +6,7 @@ from machete.views import JsonApiEndpoint
 
 from .forms import PostForm
 from .models import Post
+from .serializers import PostSerializer  # Import needed to ensure the serializer has been registered
 
 
 #def post_details(request, ids):
