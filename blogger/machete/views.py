@@ -7,7 +7,7 @@ import json
 from django.views.generic import View
 from django.core.exceptions import ImproperlyConfigured
 from django.core.urlresolvers import reverse
-from django.http import HttpResponse
+from django.http import HttpResponse, Http404
 
 from .serializers import serialize
 from .exceptions import (JsonApiError, MissingRequestBody, InvalidDataFormat,
@@ -15,7 +15,250 @@ from .exceptions import (JsonApiError, MissingRequestBody, InvalidDataFormat,
 from .utils import RequestContext, RequestWithResourceContext, pluck_ids
 
 
+class GetJsonApiEndpoint(View):
+    """
+    Extends a generic View to provide support for retrieving resources.
+
+    Some methods might seem convoluted, but they're mostly built that
+    way to provide useful points of extension/override. Methods are
+    rarely passed all information, but request-method methods
+    (get, post,...) should provide a context object containing the
+    necessary information under ``self.context``.
+
+    """
+
+    content_type = 'application/json'  # Default to this for now; works better in browsers
+    methods = ['get']
+    pks_url_key = 'pks'
+    pk_field = 'pk'
+    queryset = None
+    form_class = None
+
+    def __init__(self, *args, **kwargs):
+        super(GetJsonApiEndpoint, self).__init__(*args, **kwargs)
+        self.context = None
+        # Django uses http_method_names to know which methods are
+        # supported, we always add options on top which will advertise
+        # the actual methods we support.
+        self.http_method_names = self.get_methods() + ['options']
+
+    def dispatch(self, request, *args, **kwargs):
+        # Override dispatch to enable the handling or errors we can
+        # handle.
+        try:
+            return super(GetJsonApiEndpoint, self).dispatch(request, *args, **kwargs)
+        except Exception as error:
+            return self.handle_error(error)
+
+    def options(self, request, *args, **kwargs):
+        # From the JSON API FAQ:
+        # http://jsonapi.org/faq/#how-to-discover-resource-possible-actions
+        return HttpResponse(','.join(m.upper() for m in self.get_methods()))
+
+    def get(self, request, *args, **kwargs):
+        self.context = self.create_get_context(request)
+        collection = False
+        if self.context.pk:
+            data = self.get_resource()
+        else:
+            data = self.get_resources()
+            collection = True
+        return self.create_http_response(data, collection=collection)
+
+    def create_http_response(self, data, collection=False):
+        """
+        Creates a HTTP response from the data.
+
+        The data might be an (a) HttpResponse object, (b) dict or (c)
+        object that can be serialized.
+
+        HttpResponse objects will simply be returned without further
+        processing, dicts will be turned into JSON and returned as a
+        response using the status attribute of the context. Other
+        objects will be serialized using ``serialize`` method.
+
+        """
+        if isinstance(data, HttpResponse):
+            # No more processing necessary
+            return data
+        if isinstance(data, dict):
+            # How nice. Use it!
+            response_data = data
+        else:
+            # Everything else: run it through the serialization process
+            response_data = self.serialize(data, collection=collection)
+        json_data = self.create_json(response_data, indent=2)
+        status = self.context.status
+        content_type = self.get_content_type()
+        response = HttpResponse(json_data, content_type=content_type, status=status)
+        return self.postprocess_response(response, data, response_data, collection)
+
+    def serialize(self, data, collection=False, compound=False):
+        """
+        Serializes the data.
+
+        Note that a serializer must have been registered with the name
+        of this resource.
+
+        """
+        return serialize(self.get_resource_name(), data, many=collection, compound=compound)
+
+    def handle_error(self, error):
+        # TODO Improve error reporting
+        error_object = {}
+        if isinstance(error, FormValidationError):
+            error_object['message'] = '%s' % error
+            return HttpResponse(self.create_json({'errors': error_object}), status=400)
+        if isinstance(error, Http404):
+            error_object['message'] = '%s' % error
+            return HttpResponse(self.create_json({'errors': error_object}), status=404)
+        if isinstance(error, JsonApiError):
+            error_object['message'] = '%s' % error
+            return HttpResponse(self.create_json({'errors': error_object}), status=500)
+        raise error
+
+    def postprocess_response(self, response, data, response_data, collection):
+        """
+        If you need to do any further processing of the HttpResponse
+        objects, this is the place to do it.
+
+        """
+        return response
+
+    def get_resource(self):
+        """
+        Grabs the resource for a resource request.
+
+        Maps to ``GET /posts/1``.
+
+        """
+        filter = {self.get_pk_field(): self.context.pk}
+        return self.get_queryset().get(**filter)
+
+    def get_resources(self):
+        """
+        Grabs the resources for a collection request.
+
+        Maps to ``GET /posts/1,2,3`` or ``GET /posts``.
+
+        """
+        qs = self.get_queryset()
+        if self.context.pks:
+            filter = {'%s__in' % self.get_pk_field(): self.context.pks}
+            qs = qs.filter(**filter)
+        return qs
+
+    def is_changed_besides(self, resource, model):
+        # TODO Perform simple diff of serialized model with resource
+        return False
+
+    def get_pk_field(self):
+        """
+        Determines the name of the primary key field of the model.
+
+        Either set the ``pk_field`` on the class or override this method
+        when your model's primary key points to another field than the
+        default.
+
+        """
+        return self.pk_field
+
+    def get_queryset(self):
+        """
+        Get the list of items for this endpoint.
+
+        This must be an iterable, and may be a queryset
+        (in which qs-specific behavior will be enabled).
+        """
+        if self.queryset is not None:
+            queryset = self.queryset
+            if hasattr(queryset, '_clone'):
+                queryset = queryset._clone()
+        elif self.model is not None:
+            queryset = self.model._default_manager.all()
+        else:
+            raise ImproperlyConfigured("'%s' must define 'queryset' or 'model'"
+                                       % self.__class__.__name__)
+        return queryset
+
+    def get_resource_name(self):
+        """
+        Determines the name of this resource.
+
+        Override this method or set ``resource_name`` on the class.
+
+        """
+        return self.resource_name
+
+    def get_content_type(self):
+        """
+        Determines the content type of responses.
+
+        Override this method or set ``content_type`` on the class.
+
+        """
+        return self.content_type
+
+    def create_get_context(self, request):
+        """Creates the context for a GET request."""
+        pks = self.kwargs.get(self.pks_url_key, '')
+        pks = pks.split(',') if pks else []
+        nr_pks = len(pks)
+        if nr_pks == 1:
+            mode = 'get'
+        else:
+            mode = 'get_multiple'
+        return RequestContext(request, pks, mode)
+
+    def extract_resources(self, request):
+        """
+        Extracts resources from the request body.
+
+        This should probably be moved elsewhere since it doesn't make
+        sense in a GET request. But still.
+
+        """
+        body = request.body
+        if not body:
+            raise MissingRequestBody()
+        resource_name = self.get_resource_name()
+        try:
+            data = self.parse_json(body)
+            if not resource_name in data:
+                raise InvalidDataFormat('Missing %s as key' % resource_name)
+            obj = data[resource_name]
+            if isinstance(obj, list):
+                resource = None
+                resources = obj
+                many = True
+            else:
+                resource = obj
+                resources = [obj]
+                many = False
+            return resource, resources, many
+        except ValueError:
+            raise InvalidDataFormat()
+
+    def parse_json(self, data):
+        return json.loads(data)
+
+    def create_json(self, data, *args, **kwargs):
+        return json.dumps(data, *args, **kwargs)
+
+    def get_methods(self):
+        return self.methods
+
+
 class WithFormMixin(object):
+    """
+    Mixin supporting create and update of resources with a model form.
+
+    Note that it relies on some methods made available by the
+    GetJsonApiEndpoint.
+
+    """
+
+    form_class = None
 
     def get_form_kwargs(self, **kwargs):
         return kwargs
@@ -24,6 +267,7 @@ class WithFormMixin(object):
         return self.form_class
 
     def get_form(self, resource, instance=None):
+        """Constructs a new form instance with the supplied data."""
         data = self.prepare_form_data(resource, instance)
         form_kwargs = {'data': data, 'instance': instance}
         form_kwargs = self.get_form_kwargs(**form_kwargs)
@@ -33,6 +277,7 @@ class WithFormMixin(object):
         return form_class(**form_kwargs)
 
     def prepare_form_data(self, resource, instance=None):
+        """Last chance to tweak the data being passed to the form."""
         if instance:
             original = self.serialize(instance, compound=False)
             original = original[self.get_resource_name()]
@@ -48,6 +293,18 @@ class WithFormMixin(object):
 
 
 class PostMixin(object):
+    """
+    Provides support for POST requests on resources.
+
+    Since a successful response must include a location header, you
+    should set ``url_name`` or ``url_name_detail``, or override the
+    ``create_resource_url`` method.
+
+    The ``create_resource`` method must be implemented to actually do
+    something.
+
+    """
+
     url_name_detail = None
     url_name_list = None
     url_name = None
@@ -77,6 +334,7 @@ class PostMixin(object):
         return [self.create_resource(r) for r in resources]
 
     def create_resource(self, resource):
+        """Create the resource and return the corresponding model."""
         pass
 
     def postprocess_response(self, response, data, response_data, collection):
@@ -100,6 +358,10 @@ class PostMixin(object):
 
 
 class PostWithFormMixin(PostMixin, WithFormMixin):
+    """
+    Provides an implementation of ``create_resource`` using a form.
+
+    """
 
     def create_resource(self, resource):
         form = self.get_form(resource)
@@ -109,6 +371,15 @@ class PostWithFormMixin(PostMixin, WithFormMixin):
 
 
 class PutMixin(object):
+    """
+    Provides support for PUT requests on resources.
+
+    This supports both full and partial updates, on single and multiple
+    resources.
+
+    Requires ``update_resource`` to be implemented.
+
+    """
 
     def get_methods(self):
         return super(PutMixin, self).get_methods() + ['put']
@@ -154,6 +425,10 @@ class PutMixin(object):
 
 
 class PutWithFormMixin(PutMixin, WithFormMixin):
+    """
+    Provides an implementation of ``update_resource`` using a form.
+
+    """
 
     def update_resource(self, resource):
         resource_id = resource['id']
@@ -170,19 +445,27 @@ class PutWithFormMixin(PutMixin, WithFormMixin):
 
 
 class DeleteMixin(object):
+    """
+    Provides support for DELETE request on single + multiple resources.
+
+    """
 
     def get_methods(self):
         return super(DeleteMixin, self).get_methods() + ['delete']
 
     def delete(self, request, *args, **kwargs):
         self.context = self.create_delete_context(request)
+        if not self.context.pks:
+            raise Http404('Missing ids')
+        # Although the default implementation defers DELETE request for
+        # both single and multiple resources to the ``perform_delete``
+        # method, we still split based on
         if self.context.pk:
             not_deleted = self.delete_resource()
         else:
             not_deleted = self.delete_resources()
         if not_deleted:
-            # TODO Raise 404
-            pass
+            raise Http404('Resources %s not found' % ','.join(not_deleted))
         return HttpResponse(status=204)
 
     def create_delete_context(self, request):
@@ -212,150 +495,13 @@ class DeleteMixin(object):
         return not_deleted
 
 
-class GetJsonApiEndpoint(View):
-    methods = ['get']
-    pks_url_key = 'pks'
-    pk_field = 'pk'
-    queryset = None
-    form_class = None
-
-    def __init__(self, *args, **kwargs):
-        super(GetJsonApiEndpoint, self).__init__(*args, **kwargs)
-        self.context = None
-        self.http_method_names = self.get_methods() + ['options']
-
-    def dispatch(self, request, *args, **kwargs):
-        try:
-            return super(GetJsonApiEndpoint, self).dispatch(request, *args, **kwargs)
-        except Exception as error:
-            print(error)
-            import traceback
-            print(traceback.format_exc())
-            return self.handle_error(error)
-
-    def options(self, request, *args, **kwargs):
-        return HttpResponse(','.join(m.upper() for m in self.get_methods()))
-
-    def get(self, request, *args, **kwargs):
-        self.context = self.create_get_context(request)
-        collection = False
-        if self.context.pk:
-            data = self.get_resource()
-        else:
-            data = self.get_resources()
-            collection = True
-        return self.create_http_response(data, collection=collection)
-
-    def create_http_response(self, data, collection=False):
-        if isinstance(data, HttpResponse):
-            return data
-        if isinstance(data, dict):
-            response_data = data
-        else:
-            response_data = self.serialize(data, collection=collection)
-        json_data = self.create_json(response_data, indent=2)
-        status = self.context.status
-        content_type = self.get_content_type()
-        response = HttpResponse(json_data, content_type=content_type, status=status)
-        return self.postprocess_response(response, data, response_data, collection)
-
-    def serialize(self, data, collection=False, compound=False):
-        return serialize(self.get_resource_name(), data, many=collection, compound=compound)
-
-    def handle_error(self, error):
-        error_object = {}
-        status = 500
-        if isinstance(error, FormValidationError):
-            status = 400
-        if isinstance(error, JsonApiError):
-            error_object['message'] = '%s' % error
-            return HttpResponse(self.create_json({'errors': error_object}), status=status)
-        raise error
-
-    def postprocess_response(self, response, data, response_data, collection):
-        return response
-
-    def get_resource(self):
-        filter = {self.get_pk_field(): self.context.pk}
-        return self.get_queryset().get(**filter)
-
-    def get_resources(self):
-        qs = self.get_queryset()
-        if self.context.pks:
-            filter = {'%s__in' % self.get_pk_field(): self.context.pks}
-            qs = qs.filter(**filter)
-        return qs
-
-    def is_changed_besides(self, resource, model):
-        # TODO Perform simple diff of serialized model with resource
-        return False
-
-    def get_pk_field(self):
-        return self.pk_field
-
-    def get_queryset(self):
-        """
-        Get the list of items for this view. This must be an iterable, and may
-        be a queryset (in which qs-specific behavior will be enabled).
-        """
-        if self.queryset is not None:
-            queryset = self.queryset
-            if hasattr(queryset, '_clone'):
-                queryset = queryset._clone()
-        elif self.model is not None:
-            queryset = self.model._default_manager.all()
-        else:
-            raise ImproperlyConfigured("'%s' must define 'queryset' or 'model'"
-                                       % self.__class__.__name__)
-        return queryset
-
-    def get_resource_name(self):
-        return self.resource_name
-
-    def get_content_type(self):
-        return 'application/json'
-
-    def create_get_context(self, request):
-        pks = self.kwargs.get(self.pks_url_key, '')
-        pks = pks.split(',') if pks else []
-        nr_pks = len(pks)
-        if nr_pks == 1:
-            mode = 'get'
-        else:
-            mode = 'get_multiple'
-        return RequestContext(request, pks, mode)
-
-    def extract_resources(self, request):
-        body = request.body
-        if not body:
-            raise MissingRequestBody()
-        resource_name = self.get_resource_name()
-        try:
-            data = self.parse_json(body)
-            if not resource_name in data:
-                raise InvalidDataFormat('Missing %s as key' % resource_name)
-            obj = data[resource_name]
-            if isinstance(obj, list):
-                resource = None
-                resources = obj
-                many = True
-            else:
-                resource = obj
-                resources = [obj]
-                many = False
-            return resource, resources, many
-        except ValueError:
-            raise InvalidDataFormat()
-
-    def parse_json(self, data):
-        return json.loads(data)
-
-    def create_json(self, data, *args, **kwargs):
-        return json.dumps(data, *args, **kwargs)
-
-    def get_methods(self):
-        return self.methods
-
-
 class JsonApiEndpoint(PostWithFormMixin, PutWithFormMixin, DeleteMixin, GetJsonApiEndpoint):
+    """
+    Ties everything together.
+
+    Use this base class when you need to support GET, POST, PUT and
+    DELETE and want to use a form to process incoming data.
+
+    """
+
     pass
