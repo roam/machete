@@ -9,62 +9,10 @@ from django.core.exceptions import ImproperlyConfigured
 from django.core.urlresolvers import reverse
 from django.http import HttpResponse
 
-from blog.serializers import serialize
-
-
-class JsonApiError(Exception):
-
-    def __init__(self, *args, **kwargs):
-        super(JsonApiError, self).__init__(*args, **kwargs)
-
-
-class MissingRequestBody(JsonApiError):
-    pass
-
-
-class InvalidDataFormat(JsonApiError):
-    pass
-
-
-class IdMismatch(JsonApiError):
-    pass
-
-
-class FormValidationError(JsonApiError):
-
-    def __init__(self, *args, **kwargs):
-        self.form = kwargs.pop('form', None)
-        super(FormValidationError, self).__init__(*args, **kwargs)
-
-
-class RequestContext(object):
-
-    def __init__(self, request, pks, mode, status=200):
-        self.request = request
-        self.pks = pks
-        self.nr_pks = len(pks)
-        self.pk = None if self.nr_pks != 1 else self.pks[0]
-        self.mode = mode
-        self.status = status
-
-
-class RequestWithResourceContext(RequestContext):
-
-    def __init__(self, request, pks, mode, resource, resources, many, status=200):
-        super(RequestWithResourceContext, self).__init__(request, pks, mode, status=status)
-        self.resource = resource
-        self.resources = resources
-        self.many = many
-
-
-def pluck_ids(data, name=None):
-    if name:
-        items = data[name]
-    else:
-        items = data
-    if not isinstance(items, list):
-        items = [items]
-    return ['%s' % i['id'] for i in items]
+from .serializers import serialize
+from .exceptions import (JsonApiError, MissingRequestBody, InvalidDataFormat,
+                         IdMismatch, FormValidationError)
+from .utils import RequestContext, RequestWithResourceContext, pluck_ids
 
 
 class WithFormMixin(object):
@@ -264,7 +212,7 @@ class DeleteMixin(object):
         return not_deleted
 
 
-class GetJsonApiView(View):
+class GetJsonApiEndpoint(View):
     methods = ['get']
     pks_url_key = 'pks'
     pk_field = 'pk'
@@ -272,13 +220,13 @@ class GetJsonApiView(View):
     form_class = None
 
     def __init__(self, *args, **kwargs):
-        super(GetJsonApiView, self).__init__(*args, **kwargs)
+        super(GetJsonApiEndpoint, self).__init__(*args, **kwargs)
         self.context = None
         self.http_method_names = self.get_methods() + ['options']
 
     def dispatch(self, request, *args, **kwargs):
         try:
-            return super(GetJsonApiView, self).dispatch(request, *args, **kwargs)
+            return super(GetJsonApiEndpoint, self).dispatch(request, *args, **kwargs)
         except Exception as error:
             print(error)
             import traceback
@@ -409,5 +357,5 @@ class GetJsonApiView(View):
         return self.methods
 
 
-class JsonApiView(PostWithFormMixin, PutWithFormMixin, DeleteMixin, GetJsonApiView):
+class JsonApiEndpoint(PostWithFormMixin, PutWithFormMixin, DeleteMixin, GetJsonApiEndpoint):
     pass
