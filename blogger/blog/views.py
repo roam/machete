@@ -11,6 +11,8 @@ from django.http import HttpResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 
+from machete.views import JsonApiView
+
 from .forms import PostForm
 from .models import Post, Comment, Author, Tag
 from .serializers import serialize, PostSerializer, Context, PostNestedCommentsSerializer, serialization_context, init_serialization_context, resource_url_template
@@ -216,3 +218,10 @@ def create_resource(resource, form_class, **form_kwargs):
     if form.is_valid():
         return form.save(), None
     return None, form.errors
+
+
+class PostsView(JsonApiView):
+    resource_name = 'posts'
+    model = Post
+    form_class = PostForm
+    url_name_detail = 'the_posts_detail'

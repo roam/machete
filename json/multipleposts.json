@@ -1,0 +1,6 @@
+{
+    "posts": [
+        {"id": "16", "title":"NEW adTITLE", "content": null, "links":{"author": "1"}},
+        {"id": "17", "title":"New one?", "content":"NEW CONTENT", "links":{"author": "2"}}
+    ]
+}
