@@ -67,151 +67,7 @@ def pluck_ids(data, name=None):
     return ['%s' % i['id'] for i in items]
 
 
-class JsonApiView(View):
-    methods = 'get post put delete'.split()
-    pks_url_key = 'pks'
-    pk_field = 'pk'
-    url_name_detail = None
-    url_name_list = None
-    url_name = None
-    queryset = None
-    form_class = None
-
-    def __init__(self, *args, **kwargs):
-        super(JsonApiView, self).__init__(*args, **kwargs)
-        self.context = None
-        self.http_method_names = self.methods + ['options']
-
-    def dispatch(self, request, *args, **kwargs):
-        try:
-            return super(JsonApiView, self).dispatch(request, *args, **kwargs)
-        except Exception as error:
-            print(error)
-            import traceback
-            print(traceback.format_exc())
-            return self.handle_error(error)
-
-    def options(self, request, *args, **kwargs):
-        do_not_advertise = ['options']
-        return HttpResponse(','.join(m.upper() for m in self.methods if m not in do_not_advertise))
-
-    def get(self, request, *args, **kwargs):
-        self.context = self.create_get_context(request)
-        collection = False
-        if self.context.pk:
-            data = self.get_resource()
-        else:
-            data = self.get_resources()
-            collection = True
-        return self.create_http_response(data, collection=collection)
-
-    def post(self, request, *args, **kwargs):
-        self.context = self.create_post_context(request)
-        collection = False
-        if self.context.many:
-            data = self.create_resources(self.context.resources)
-            collection = True
-        else:
-            data = self.create_resource(self.context.resource)
-        return self.create_http_response(data, collection=collection)
-
-    def put(self, request, *args, **kwargs):
-        self.context = self.create_put_context(request)
-        collection = False
-        if self.context.many:
-            changed_more, data = self.update_resources(self.context.resources)
-            collection = True
-        else:
-            changed_more, data = self.update_resource(self.context.resource)
-        if not changed_more:
-            return HttpResponse(status=204)
-        return self.create_http_response(data, collection=collection, detect_changes=True)
-
-    def create_http_response(self, data, collection=False):
-        if isinstance(data, HttpResponse):
-            return data
-        if isinstance(data, dict):
-            response_data = data
-        else:
-            response_data = self.serialize(data, collection=collection)
-        json_data = self.create_json(response_data, indent=2)
-        status = self.context.status
-        content_type = self.get_content_type()
-        response = HttpResponse(json_data, content_type=content_type, status=status)
-        return self.postprocess_response(response, data, response_data, collection)
-
-    def serialize(self, data, collection=False, compound=False):
-        return serialize(self.get_resource_name(), data, many=collection, compound=compound)
-
-    def handle_error(self, error):
-        error_object = {}
-        status = 500
-        if isinstance(error, FormValidationError):
-            status = 400
-        if isinstance(error, JsonApiError):
-            error_object['message'] = '%s' % error
-            return HttpResponse(self.create_json({'errors': error_object}), status=status)
-        raise error
-
-    def postprocess_response(self, response, data, response_data, collection):
-        if not self.context.status == 201:
-            return response
-        pks = ','.join(pluck_ids(response_data, self.get_resource_name()))
-        location = self.create_resource_url(pks)
-        response['Location'] = location
-        return response
-
-    def create_resource_url(self, pks):
-        kwargs = {self.pks_url_key: pks}
-        return reverse(self.get_url_name('detail'), kwargs=kwargs)
-
-    def get_url_name(self, url_type):
-        if url_type == 'detail' and self.url_name_detail:
-            return self.url_name_detail
-        if url_type == 'list' and self.url_name_list:
-            return self.url_name_list
-        return self.url_name
-
-    def get_resource(self):
-        filter = {self.get_pk_field(): self.context.pk}
-        return self.get_queryset().get(**filter)
-
-    def get_resources(self):
-        qs = self.get_queryset()
-        if self.context.pks:
-            filter = {'%s__in' % self.get_pk_field(): self.context.pks}
-            qs = qs.filter(**filter)
-        return qs
-
-    def create_resources(self, resources):
-        return [self.create_resource(r) for r in resources]
-
-    def create_resource(self, resource):
-        form = self.get_form(resource)
-        if form.is_valid():
-            return form.save()
-        raise FormValidationError('', form=form)
-
-    def update_resources(self, resources):
-        updated = []
-        changed = []
-        for res in resources:
-            changed_more, result = self.update_resource(res)
-            updated.append(result)
-            changed.append(changed_more)
-        return any(changed), updated
-
-    def update_resource(self, resource):
-        resource_id = resource['id']
-        if resource_id not in self.context.pks:
-            message = 'Id %s in request body but not in URL' % resource_id
-            raise IdMismatch(message)
-        filter = {self.get_pk_field(): resource_id}
-        instance = self.get_queryset().get(**filter)
-        form = self.get_form(resource, instance)
-        if form.is_valid():
-            return False, form.save()
-        raise FormValidationError('', form=form)
+class WithFormMixin(object):
 
     def get_form_kwargs(self, **kwargs):
         return kwargs
@@ -241,6 +97,250 @@ class JsonApiView(View):
                     merged[field] = value
             return merged
         return dict(resource.items() + resource.get('links', {}).items())
+
+
+class PostMixin(object):
+    url_name_detail = None
+    url_name_list = None
+    url_name = None
+
+    def get_methods(self):
+        return super(PostMixin, self).get_methods() + ['post']
+
+    def post(self, request, *args, **kwargs):
+        self.context = self.create_post_context(request)
+        collection = False
+        if self.context.many:
+            data = self.create_resources(self.context.resources)
+            collection = True
+        else:
+            data = self.create_resource(self.context.resource)
+        return self.create_http_response(data, collection=collection)
+
+    def create_post_context(self, request):
+        resource, resources, many = self.extract_resources(request)
+        if many:
+            mode = 'create_multiple'
+        else:
+            mode = 'create'
+        return RequestWithResourceContext(request, [], mode, resource, resources, many, status=201)
+
+    def create_resources(self, resources):
+        return [self.create_resource(r) for r in resources]
+
+    def create_resource(self, resource):
+        pass
+
+    def postprocess_response(self, response, data, response_data, collection):
+        if self.context.status != 201:
+            return response
+        pks = ','.join(pluck_ids(response_data, self.get_resource_name()))
+        location = self.create_resource_url(pks)
+        response['Location'] = location
+        return response
+
+    def create_resource_url(self, pks):
+        kwargs = {self.pks_url_key: pks}
+        return reverse(self.get_url_name('detail'), kwargs=kwargs)
+
+    def get_url_name(self, url_type):
+        if url_type == 'detail' and self.url_name_detail:
+            return self.url_name_detail
+        if url_type == 'list' and self.url_name_list:
+            return self.url_name_list
+        return self.url_name
+
+
+class PostWithFormMixin(PostMixin, WithFormMixin):
+
+    def create_resource(self, resource):
+        form = self.get_form(resource)
+        if form.is_valid():
+            return form.save()
+        raise FormValidationError('', form=form)
+
+
+class PutMixin(object):
+
+    def get_methods(self):
+        return super(PutMixin, self).get_methods() + ['put']
+
+    def put(self, request, *args, **kwargs):
+        self.context = self.create_put_context(request)
+        collection = False
+        if self.context.many:
+            changed_more, data = self.update_resources(self.context.resources)
+            collection = True
+        else:
+            changed_more, data = self.update_resource(self.context.resource)
+        if not changed_more:
+            # > A server MUST return a 204 No Content status code if an update
+            # > is successful and the client's current attributes remain up to
+            # > date. This applies to PUT requests as well as POST and DELETE
+            # > requests that modify links without affecting other attributes
+            # > of a resource.
+            return HttpResponse(status=204)
+        return self.create_http_response(data, collection=collection, detect_changes=True)
+
+    def create_put_context(self, request):
+        pks = self.kwargs.get(self.pks_url_key, '')
+        pks = pks.split(',') if pks else []
+        resource, resources, many = self.extract_resources(request)
+        if many:
+            mode = 'update_multiple'
+        else:
+            mode = 'update'
+        return RequestWithResourceContext(request, pks, mode, resource, resources, many, status=200)
+
+    def update_resources(self, resources):
+        updated = []
+        changed = []
+        for res in resources:
+            changed_more, result = self.update_resource(res)
+            updated.append(result)
+            changed.append(changed_more)
+        return any(changed), updated
+
+    def update_resource(self, resource):
+        pass
+
+
+class PutWithFormMixin(PutMixin, WithFormMixin):
+
+    def update_resource(self, resource):
+        resource_id = resource['id']
+        if resource_id not in self.context.pks:
+            message = 'Id %s in request body but not in URL' % resource_id
+            raise IdMismatch(message)
+        filter = {self.get_pk_field(): resource_id}
+        instance = self.get_queryset().get(**filter)
+        form = self.get_form(resource, instance)
+        if form.is_valid():
+            model = form.save()
+            return self.is_changed_besides(resource, model), model
+        raise FormValidationError('', form=form)
+
+
+class DeleteMixin(object):
+
+    def get_methods(self):
+        return super(DeleteMixin, self).get_methods() + ['delete']
+
+    def delete(self, request, *args, **kwargs):
+        self.context = self.create_delete_context(request)
+        if self.context.pk:
+            not_deleted = self.delete_resource()
+        else:
+            not_deleted = self.delete_resources()
+        if not_deleted:
+            # TODO Raise 404
+            pass
+        return HttpResponse(status=204)
+
+    def create_delete_context(self, request):
+        pks = self.kwargs.get(self.pks_url_key, '')
+        pks = pks.split(',') if pks else []
+        nr_pks = len(pks)
+        if nr_pks == 1:
+            mode = 'delete'
+        else:
+            mode = 'delete_multiple'
+        return RequestContext(request, pks, mode)
+
+    def delete_resources(self):
+        return self.perform_delete(self.context.pks)
+
+    def delete_resource(self):
+        return self.perform_delete(self.context.pks)
+
+    def perform_delete(self, pks):
+        not_deleted = pks[:]
+        filter = {'%s__in' % self.get_pk_field(): pks}
+        for item in self.get_queryset().filter(**filter).iterator():
+            # Fetch each item separately to actually trigger any logic
+            # performed in the delete method (like implicit deletes)
+            not_deleted.remove('%s' % item.pk)
+            item.delete()
+        return not_deleted
+
+
+class GetJsonApiView(View):
+    methods = ['get']
+    pks_url_key = 'pks'
+    pk_field = 'pk'
+    queryset = None
+    form_class = None
+
+    def __init__(self, *args, **kwargs):
+        super(GetJsonApiView, self).__init__(*args, **kwargs)
+        self.context = None
+        self.http_method_names = self.get_methods() + ['options']
+
+    def dispatch(self, request, *args, **kwargs):
+        try:
+            return super(GetJsonApiView, self).dispatch(request, *args, **kwargs)
+        except Exception as error:
+            print(error)
+            import traceback
+            print(traceback.format_exc())
+            return self.handle_error(error)
+
+    def options(self, request, *args, **kwargs):
+        return HttpResponse(','.join(m.upper() for m in self.get_methods()))
+
+    def get(self, request, *args, **kwargs):
+        self.context = self.create_get_context(request)
+        collection = False
+        if self.context.pk:
+            data = self.get_resource()
+        else:
+            data = self.get_resources()
+            collection = True
+        return self.create_http_response(data, collection=collection)
+
+    def create_http_response(self, data, collection=False):
+        if isinstance(data, HttpResponse):
+            return data
+        if isinstance(data, dict):
+            response_data = data
+        else:
+            response_data = self.serialize(data, collection=collection)
+        json_data = self.create_json(response_data, indent=2)
+        status = self.context.status
+        content_type = self.get_content_type()
+        response = HttpResponse(json_data, content_type=content_type, status=status)
+        return self.postprocess_response(response, data, response_data, collection)
+
+    def serialize(self, data, collection=False, compound=False):
+        return serialize(self.get_resource_name(), data, many=collection, compound=compound)
+
+    def handle_error(self, error):
+        error_object = {}
+        status = 500
+        if isinstance(error, FormValidationError):
+            status = 400
+        if isinstance(error, JsonApiError):
+            error_object['message'] = '%s' % error
+            return HttpResponse(self.create_json({'errors': error_object}), status=status)
+        raise error
+
+    def postprocess_response(self, response, data, response_data, collection):
+        return response
+
+    def get_resource(self):
+        filter = {self.get_pk_field(): self.context.pk}
+        return self.get_queryset().get(**filter)
+
+    def get_resources(self):
+        qs = self.get_queryset()
+        if self.context.pks:
+            filter = {'%s__in' % self.get_pk_field(): self.context.pks}
+            qs = qs.filter(**filter)
+        return qs
+
+    def is_changed_besides(self, resource, model):
+        # TODO Perform simple diff of serialized model with resource
+        return False
 
     def get_pk_field(self):
         return self.pk_field
@@ -277,24 +377,6 @@ class JsonApiView(View):
             mode = 'get_multiple'
         return RequestContext(request, pks, mode)
 
-    def create_post_context(self, request):
-        resource, resources, many = self.extract_resources(request)
-        if many:
-            mode = 'create_multiple'
-        else:
-            mode = 'create'
-        return RequestWithResourceContext(request, [], mode, resource, resources, many, status=201)
-
-    def create_put_context(self, request):
-        pks = self.kwargs.get(self.pks_url_key, '')
-        pks = pks.split(',') if pks else []
-        resource, resources, many = self.extract_resources(request)
-        if many:
-            mode = 'update_multiple'
-        else:
-            mode = 'update'
-        return RequestWithResourceContext(request, pks, mode, resource, resources, many, status=200)
-
     def extract_resources(self, request):
         body = request.body
         if not body:
@@ -322,3 +404,10 @@ class JsonApiView(View):
 
     def create_json(self, data, *args, **kwargs):
         return json.dumps(data, *args, **kwargs)
+
+    def get_methods(self):
+        return self.methods
+
+
+class JsonApiView(PostWithFormMixin, PutWithFormMixin, DeleteMixin, GetJsonApiView):
+    pass

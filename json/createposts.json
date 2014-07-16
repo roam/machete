@@ -1,0 +1,11 @@
+{
+    "posts": [
+        {
+            "content": "Lorem ipsum",
+            "links": {
+                "author": "1"
+            },
+            "title": "Something new"
+        }
+    ]
+}
