@@ -17,8 +17,18 @@ First, get the source. Then:
     $ pip install Django==1.6.5
     ...
     $ cd blogger
+
+Then either run:
+
     $ python manage.py syncdb
     ...
-    $ python manage.py runserver
-    ...
 
+Or rename db.sqlite3.example to db.sqlite3:
+
+    $ cp db.sqlite3.example db.sqlite3
+
+Finally start the server:
+
+    $ python manage.py runserver
+
+Play around with it ([HTTPie](https://github.com/jakubroztocil/httpie) is recommended) by opening [http://localhost:8000/api/posts]()
