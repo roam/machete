@@ -5,25 +5,12 @@ from __future__ import (unicode_literals, print_function, division,
 import threading
 from collections import MutableMapping, defaultdict
 
-from django.core.urlresolvers import reverse
-
 from marshmallow import Serializer, fields, class_registry
+
+from .urls import get_resource_detail_url, to_absolute_url
 
 
 threadlocal = threading.local()
-
-
-def resource_url_template(viewname, template, urlconf=None, kwargs=None, prefix=None, current_app=None, ids_group_name=None):
-    if not ids_group_name:
-        ids_group_name = 'ids'
-    if not kwargs:
-        kwargs = {}
-    placeholder = '123456789'
-    while placeholder in kwargs.values():
-        placeholder += placeholder
-    kwargs[ids_group_name] = placeholder
-    result = reverse(viewname, urlconf=urlconf, kwargs=kwargs, prefix=prefix, current_app=None)
-    return result.replace(placeholder, template)
 
 
 def serialize(name, *args, **kwargs):
@@ -31,22 +18,25 @@ def serialize(name, *args, **kwargs):
     serializer_class = kwargs.pop('serializer', None)
     if not serializer_class:
         serializer_class = class_registry.get_class(name)
+    if not 'context' in kwargs:
+        kwargs['context'] = {}
     init_serialization_context()
     serializer = serializer_class(*args, **kwargs)
     embedded = serializer.data
     context = serialization_context()
     current_ids_by_field = context.ids_by_field.copy()
-    print(current_ids_by_field)
     #current_ids_by_type = context.ids_by_type.copy()
     data = {name: embedded}
     #links = {}
     if compound:
         linked = {}
+        sub_kwargs = kwargs.copy()
+        sub_kwargs['many'] = True
         for attribute, ids in current_ids_by_field.items():
             field = serializer.fields['links'].field_by_relation_type(attribute)
             instances = field.get_instances(ids)
             init_serialization_context()
-            linked[field.get_relation_type()] = field.get_serializer()(instances, many=True).data
+            linked[field.get_relation_type()] = field.get_serializer()(instances, **sub_kwargs).data
         data['linked'] = linked
     return data
 
@@ -187,6 +177,30 @@ class LinksField(fields.Raw):
             link_field.name = name
             links[name] = link_field.output(name, obj)
         return links
+
+
+class HrefField(fields.Method):
+
+    def __init__(self, *args, **kwargs):
+        if 'method_name' not in kwargs:
+            kwargs['method_name'] = 'get_absolute_url'
+        super(HrefField, self).__init__(*args, **kwargs)
+
+    def output(self, key, obj):
+        url = super(HrefField, self).output(key, obj)
+        return to_absolute_url(url, self.parent.context.get('request'))
+
+
+class AutoHrefField(fields.Raw):
+
+    def __init__(self, resource_name, **kwargs):
+        super(AutoHrefField, self).__init__(**kwargs)
+        self.resource_name = resource_name
+
+    def output(self, key, obj):
+        ids = [obj.pk]
+        url = get_resource_detail_url(self.resource_name, ids)
+        return to_absolute_url(url, self.parent.context.get('request'))
 
 
 class ContextSerializer(Serializer):

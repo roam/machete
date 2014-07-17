@@ -4,7 +4,8 @@ from __future__ import (unicode_literals, print_function, division,
 
 from marshmallow import Serializer, fields, class_registry
 from machete.serializers import (ContextSerializer, LinksField,
-                                 ForeignKeyIdField, ManyToManyIdField)
+                                 ForeignKeyIdField, ManyToManyIdField,
+                                 AutoHrefField)
 
 from .models import Author, Tag, Comment
 
@@ -12,23 +13,16 @@ from .models import Author, Tag, Comment
 class TagSerializer(Serializer):
     name = fields.String()
 
-class_registry.register('tags', TagSerializer)
-
 
 class AuthorSerializer(ContextSerializer):
-    href = fields.Method('get_url')
+    href = AutoHrefField('people')
 
     class Meta:
         additional = ('id', 'name',)
 
-    def get_url(self, obj):
-        return '/hey/there/' + obj.name + '/'
-
-
-class_registry.register('people', AuthorSerializer)
-
 
 class CommentSerializer(ContextSerializer):
+    href = AutoHrefField('comments')
     links = LinksField({
         'author': ForeignKeyIdField(model=Author, debug='commentauthor'),
     })
@@ -36,10 +30,8 @@ class CommentSerializer(ContextSerializer):
         additional = ('id', 'content', 'commenter',)
 
 
-class_registry.register('comments', CommentSerializer)
-
-
 class PostSerializer(ContextSerializer):
+    href = AutoHrefField('posts')
     links = LinksField({
         'author': ForeignKeyIdField(model=Author, relation_type='people', serializer='people'),
         'tags': ManyToManyIdField(model=Tag, pk_field='name', serializer='tags'),
@@ -49,17 +41,7 @@ class PostSerializer(ContextSerializer):
         additional = ('id', 'title', 'content',)
 
 
+class_registry.register('tags', TagSerializer)
+class_registry.register('people', AuthorSerializer)
+class_registry.register('comments', CommentSerializer)
 class_registry.register('posts', PostSerializer)
-
-
-class PostNestedCommentsSerializer(ContextSerializer):
-    links = LinksField({
-        'author': ForeignKeyIdField(model=Author, relation_type='people', serializer='people'),
-        'tags': ManyToManyIdField(model=Tag, pk_field='name', serializer='tags'),
-        'comments': ManyToManyIdField(model=Comment, serializer='comments')
-    })
-    class Meta:
-        additional = ('id', 'title', 'content',)
-
-
-class_registry.register('nestedposts', PostNestedCommentsSerializer)

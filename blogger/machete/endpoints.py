@@ -122,7 +122,8 @@ class GetEndpoint(View):
         of this resource.
 
         """
-        return serialize(self.get_resource_name(), data, many=collection, compound=compound)
+        context = self.context.__dict__
+        return serialize(self.get_resource_name(), data, many=collection, compound=True, context=context)
 
     def handle_error(self, error):
         # TODO Improve error reporting
