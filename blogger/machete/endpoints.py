@@ -54,7 +54,6 @@ class GetEndpoint(View):
     def dispatch(self, request, *args, **kwargs):
         # Override dispatch to enable the handling or errors we can
         # handle.
-        self.relationship = kwargs.get('relationship')
         manager, m_args, m_kwargs = self.context_manager()
         try:
             with manager(*m_args, **m_kwargs):
@@ -81,21 +80,13 @@ class GetEndpoint(View):
         return self.get_methods()
 
     def get(self, request, *args, **kwargs):
-        #print(self.request.GET)
         self.context = self.create_get_context(request)
         collection = False
-        if self.relationship:
-            if self.context.relationship_pk:
-                data = self.get_linked_resource()
-            else:
-                data = self.get_linked_resources()
-                collection = True
+        if self.context.pk:
+            data = self.get_resource()
         else:
-            if self.context.pk:
-                data = self.get_resource()
-            else:
-                data = self.get_resources()
-                collection = True
+            data = self.get_resources()
+            collection = True
         return self.create_http_response(data, collection=collection)
 
     def create_http_response(self, data, collection=False):
@@ -182,10 +173,6 @@ class GetEndpoint(View):
             qs = qs.filter(**filter)
         return qs
 
-    def get_linked_resources(self):
-        resource = self.get_resource()
-        return getattr(resource, self.relationship)
-
     def is_changed_besides(self, resource, model):
         # TODO Perform simple diff of serialized model with resource
         return False
@@ -203,7 +190,7 @@ class GetEndpoint(View):
 
     def get_queryset(self):
         """
-        Get the list of items for this endpoint.
+        Get the list of items for this main resource.
 
         This must be an iterable, and may be a queryset
         (in which qs-specific behavior will be enabled).
