@@ -3,7 +3,9 @@ from __future__ import (unicode_literals, print_function, division,
                         absolute_import)
 
 import json
+from contextlib import contextmanager
 
+from django.db import transaction
 from django.views.generic import View
 from django.core.exceptions import ImproperlyConfigured
 from django.core.urlresolvers import reverse
@@ -13,6 +15,11 @@ from .serializers import serialize
 from .exceptions import (JsonApiError, MissingRequestBody, InvalidDataFormat,
                          IdMismatch, FormValidationError)
 from .utils import RequestContext, RequestWithResourceContext, pluck_ids
+
+
+@contextmanager
+def not_atomic(using=None):
+    yield
 
 
 class GetJsonApiEndpoint(View):
@@ -45,8 +52,10 @@ class GetJsonApiEndpoint(View):
     def dispatch(self, request, *args, **kwargs):
         # Override dispatch to enable the handling or errors we can
         # handle.
+        manager, m_args, m_kwargs = self.context_manager()
         try:
-            return super(GetJsonApiEndpoint, self).dispatch(request, *args, **kwargs)
+            with manager(*m_args, **m_kwargs):
+                return super(GetJsonApiEndpoint, self).dispatch(request, *args, **kwargs)
         except Exception as error:
             return self.handle_error(error)
 
@@ -247,6 +256,11 @@ class GetJsonApiEndpoint(View):
 
     def get_methods(self):
         return self.methods
+
+    def context_manager(self):
+        if self.request.method in ['POST', 'PUT', 'DELETE', 'PATCH']:
+            return (transaction.atomic, [], {})
+        return (not_atomic, [], {})
 
 
 class WithFormMixin(object):
