@@ -16,7 +16,8 @@ from .serializers import serialize
 from .urls import create_resource_view_name
 from .exceptions import (JsonApiError, MissingRequestBody, InvalidDataFormat,
                          IdMismatch, FormValidationError)
-from .utils import RequestContext, RequestWithResourceContext, pluck_ids
+from .utils import (RequestContext, RequestWithResourceContext, pluck_ids,
+                    RequestPayloadDescriptor)
 
 
 @contextmanager
@@ -54,6 +55,7 @@ class GetEndpoint(View):
     def dispatch(self, request, *args, **kwargs):
         # Override dispatch to enable the handling or errors we can
         # handle.
+        self.relationship_name = kwargs.get('relationship')
         manager, m_args, m_kwargs = self.context_manager()
         try:
             with manager(*m_args, **m_kwargs):
@@ -82,7 +84,7 @@ class GetEndpoint(View):
     def get(self, request, *args, **kwargs):
         self.context = self.create_get_context(request)
         collection = False
-        if self.context.pk:
+        if self.context.requested_single_resource:
             data = self.get_resource()
         else:
             data = self.get_resources()
@@ -228,12 +230,10 @@ class GetEndpoint(View):
         """Creates the context for a GET request."""
         pks = self.kwargs.get(self.pks_url_key, '')
         pks = pks.split(',') if pks else []
-        nr_pks = len(pks)
-        if nr_pks == 1:
-            mode = 'get'
-        else:
-            mode = 'get_multiple'
-        return RequestContext(request, pks, mode)
+        resource_descriptor = RequestContext.create_resource_descriptor(self.get_resource_name(), pks)
+        context = RequestContext(request, resource_descriptor)
+        context.update_mode('GET')
+        return context
 
     def extract_resources(self, request):
         """
@@ -260,7 +260,7 @@ class GetEndpoint(View):
                 resource = obj
                 resources = [obj]
                 many = False
-            return resource, resources, many
+            return RequestPayloadDescriptor(resource_name, resource, resources)
         except ValueError:
             raise InvalidDataFormat()
 
@@ -337,20 +337,20 @@ class PostMixin(object):
     def post(self, request, *args, **kwargs):
         self.context = self.create_post_context(request)
         collection = False
-        if self.context.many:
-            data = self.create_resources(self.context.resources)
+        payload = self.context.payload
+        if payload.many:
+            data = self.create_resources(payload.resources)
             collection = True
         else:
-            data = self.create_resource(self.context.resource)
+            data = self.create_resource(payload.resource)
         return self.create_http_response(data, collection=collection)
 
     def create_post_context(self, request):
-        resource, resources, many = self.extract_resources(request)
-        if many:
-            mode = 'create_multiple'
-        else:
-            mode = 'create'
-        return RequestWithResourceContext(request, [], mode, resource, resources, many, status=201)
+        payload = self.extract_resources(request)
+        descriptor = RequestContext.create_resource_descriptor(self.get_resource_name())
+        context = RequestWithResourceContext(request, descriptor, payload, status=201)
+        context.update_mode('POST')
+        return context
 
     def create_resources(self, resources):
         return [self.create_resource(r) for r in resources]
@@ -405,11 +405,12 @@ class PutMixin(object):
     def put(self, request, *args, **kwargs):
         self.context = self.create_put_context(request)
         collection = False
-        if self.context.many:
-            changed_more, data = self.update_resources(self.context.resources)
+        payload = self.context.payload
+        if payload.many:
+            changed_more, data = self.update_resources(payload.resources)
             collection = True
         else:
-            changed_more, data = self.update_resource(self.context.resource)
+            changed_more, data = self.update_resource(payload.resource)
         if not changed_more:
             # > A server MUST return a 204 No Content status code if an update
             # > is successful and the client's current attributes remain up to
@@ -422,12 +423,11 @@ class PutMixin(object):
     def create_put_context(self, request):
         pks = self.kwargs.get(self.pks_url_key, '')
         pks = pks.split(',') if pks else []
-        resource, resources, many = self.extract_resources(request)
-        if many:
-            mode = 'update_multiple'
-        else:
-            mode = 'update'
-        return RequestWithResourceContext(request, pks, mode, resource, resources, many, status=200)
+        payload = self.extract_resources(request)
+        descriptor = RequestContext.create_resource_descriptor(self.get_resource_name(), pks)
+        context = RequestWithResourceContext(request, descriptor, payload, status=200)
+        context.update_mode('PUT')
+        return context
 
     def update_resources(self, resources):
         updated = []
@@ -478,7 +478,7 @@ class DeleteMixin(object):
         # Although the default implementation defers DELETE request for
         # both single and multiple resources to the ``perform_delete``
         # method, we still split based on
-        if self.context.pk:
+        if self.context.requested_single_resource:
             not_deleted = self.delete_resource()
         else:
             not_deleted = self.delete_resources()
@@ -489,12 +489,10 @@ class DeleteMixin(object):
     def create_delete_context(self, request):
         pks = self.kwargs.get(self.pks_url_key, '')
         pks = pks.split(',') if pks else []
-        nr_pks = len(pks)
-        if nr_pks == 1:
-            mode = 'delete'
-        else:
-            mode = 'delete_multiple'
-        return RequestContext(request, pks, mode)
+        descriptor = RequestContext.create_resource_descriptor(self.get_resource_name(), pks)
+        context = RequestContext(request, descriptor)
+        context.update_mode('DELETE')
+        return context
 
     def delete_resources(self):
         return self.perform_delete(self.context.pks)
