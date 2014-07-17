@@ -22,7 +22,7 @@ def not_atomic(using=None):
     yield
 
 
-class GetJsonApiEndpoint(View):
+class GetEndpoint(View):
     """
     Extends a generic View to provide support for retrieving resources.
 
@@ -42,7 +42,7 @@ class GetJsonApiEndpoint(View):
     form_class = None
 
     def __init__(self, *args, **kwargs):
-        super(GetJsonApiEndpoint, self).__init__(*args, **kwargs)
+        super(GetEndpoint, self).__init__(*args, **kwargs)
         self.context = None
         # Django uses http_method_names to know which methods are
         # supported, we always add options on top which will advertise
@@ -55,14 +55,26 @@ class GetJsonApiEndpoint(View):
         manager, m_args, m_kwargs = self.context_manager()
         try:
             with manager(*m_args, **m_kwargs):
-                return super(GetJsonApiEndpoint, self).dispatch(request, *args, **kwargs)
+                return super(GetEndpoint, self).dispatch(request, *args, **kwargs)
         except Exception as error:
             return self.handle_error(error)
 
     def options(self, request, *args, **kwargs):
         # From the JSON API FAQ:
         # http://jsonapi.org/faq/#how-to-discover-resource-possible-actions
-        return HttpResponse(','.join(m.upper() for m in self.get_methods()))
+        self.context = self.create_get_context(request)
+        actions = self.possible_actions()
+        return HttpResponse(','.join(a.upper() for a in actions))
+
+    def possible_actions(self):
+        """
+        Returns a list of allowed methods for this endpoint.
+
+        You can use the context (a GET context) to determine what's
+        possible. By default this simply returns all allowed methods.
+
+        """
+        return self.get_methods()
 
     def get(self, request, *args, **kwargs):
         self.context = self.create_get_context(request)
@@ -268,7 +280,7 @@ class WithFormMixin(object):
     Mixin supporting create and update of resources with a model form.
 
     Note that it relies on some methods made available by the
-    GetJsonApiEndpoint.
+    GetEndpoint.
 
     """
 
@@ -509,7 +521,7 @@ class DeleteMixin(object):
         return not_deleted
 
 
-class JsonApiEndpoint(PostWithFormMixin, PutWithFormMixin, DeleteMixin, GetJsonApiEndpoint):
+class Endpoint(PostWithFormMixin, PutWithFormMixin, DeleteMixin, GetEndpoint):
     """
     Ties everything together.
 
