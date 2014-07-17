@@ -6,6 +6,7 @@ import sys
 import json
 from contextlib import contextmanager
 
+from django.views.decorators.csrf import csrf_exempt
 from django.db import transaction
 from django.views.generic import View
 from django.core.exceptions import ImproperlyConfigured
@@ -37,25 +38,35 @@ class GetEndpoint(View):
 
     """
 
+    context = None
+    relationship_name = None
     content_type = 'application/json'  # Default to this for now; works better in browsers
     methods = ['get']
     pks_url_key = 'pks'
     pk_field = 'pk'
+    relationship_pks_url_keys = None
+    relationship_pk_fields = None
     queryset = None
+    model = None
     form_class = None
 
     def __init__(self, *args, **kwargs):
         super(GetEndpoint, self).__init__(*args, **kwargs)
-        self.context = None
         # Django uses http_method_names to know which methods are
         # supported, we always add options on top which will advertise
         # the actual methods we support.
         self.http_method_names = self.get_methods() + ['options']
 
+    @classmethod
+    def endpoint(cls, relationship_name=None, **initkwargs):
+        initkwargs['relationship_name'] = relationship_name
+        return csrf_exempt(cls.as_view(**initkwargs))
+
     def dispatch(self, request, *args, **kwargs):
         # Override dispatch to enable the handling or errors we can
         # handle.
-        self.relationship_name = kwargs.get('relationship')
+        if not self.relationship_name:
+            self.relationship_name = kwargs.get('relationship')
         manager, m_args, m_kwargs = self.context_manager()
         try:
             with manager(*m_args, **m_kwargs):
@@ -84,11 +95,18 @@ class GetEndpoint(View):
     def get(self, request, *args, **kwargs):
         self.context = self.create_get_context(request)
         collection = False
-        if self.context.requested_single_resource:
-            data = self.get_resource()
+        if self.context.is_resource_request:
+            if self.context.requested_single_resource:
+                data = self.get_resource()
+            else:
+                data = self.get_resources()
+                collection = True
         else:
-            data = self.get_resources()
-            collection = True
+            if self.context.requested_single_related_resource or not self.context.to_many:
+                data = self.get_related_resource()
+            else:
+                data = self.get_related_resources()
+                collection = True
         return self.create_http_response(data, collection=collection)
 
     def create_http_response(self, data, collection=False):
@@ -127,8 +145,11 @@ class GetEndpoint(View):
         of this resource.
 
         """
+        name = self.get_resource_name()
+        if not self.context.is_resource_request:
+            name = self.relationship_name
         context = self.context.__dict__
-        return serialize(self.get_resource_name(), data, many=collection, compound=compound, context=context)
+        return serialize(name, data, many=collection, compound=compound, context=context)
 
     def handle_error(self, error, traceback=None):
         # TODO Improve error reporting
@@ -173,6 +194,32 @@ class GetEndpoint(View):
         if self.context.pks:
             filter = {'%s__in' % self.get_pk_field(): self.context.pks}
             qs = qs.filter(**filter)
+        if not qs.exists():
+            raise Http404()
+        return qs
+
+    def get_related_resource(self):
+        field_name = self.get_related_field_name()
+        resource = self.get_resource()
+        field = getattr(resource, field_name)
+        if not self.context.to_many:
+            # Since it's not a to-many, we can simply return the value
+            return field
+        pk_field = self.get_relationship_pk_field()
+        filter = {pk_field: self.context.relationship_pk}
+        return field.get(**filter)
+
+    def get_related_resources(self):
+        field_name = self.get_related_field_name()
+        resource = self.get_resource()
+        rel = getattr(resource, field_name)
+        qs = rel.all()
+        if self.context.relationship_pks:
+            pk_field = self.get_relationship_pk_field()
+            filter = {'%s__in' % pk_field: self.context.relationship_pks}
+            qs = qs.filter(**filter)
+        if not qs.exists():
+            raise Http404()
         return qs
 
     def is_changed_besides(self, resource, model):
@@ -230,7 +277,14 @@ class GetEndpoint(View):
         """Creates the context for a GET request."""
         pks = self.kwargs.get(self.pks_url_key, '')
         pks = pks.split(',') if pks else []
-        resource_descriptor = RequestContext.create_resource_descriptor(self.get_resource_name(), pks)
+        rel_pks_url_key = self.get_relationship_pks_url_key()
+        rel_pks = self.kwargs.get(rel_pks_url_key, '')
+        rel_pks = rel_pks.split(',') if rel_pks else []
+        rel_descriptor = None
+        if self.relationship_name:
+            many = self.is_to_many_relationship()
+            rel_descriptor = RequestContext.create_relationship_descriptor(self.relationship_name, rel_pks, many)
+        resource_descriptor = RequestContext.create_resource_descriptor(self.get_resource_name(), pks, rel_descriptor)
         context = RequestContext(request, resource_descriptor)
         context.update_mode('GET')
         return context
@@ -255,11 +309,9 @@ class GetEndpoint(View):
             if isinstance(obj, list):
                 resource = None
                 resources = obj
-                many = True
             else:
                 resource = obj
                 resources = [obj]
-                many = False
             return RequestPayloadDescriptor(resource_name, resource, resources)
         except ValueError:
             raise InvalidDataFormat()
@@ -277,6 +329,36 @@ class GetEndpoint(View):
         if self.request.method in ['POST', 'PUT', 'DELETE', 'PATCH']:
             return (transaction.atomic, [], {})
         return (not_atomic, [], {})
+
+    def get_related_field_name(self):
+        # TODO Use serializer to find correct name by default
+        return self.relationship_name
+
+    def get_relationship_pks_url_key(self):
+        rel_name = self.get_related_field_name()
+        keys = self.relationship_pks_url_keys
+        keys = keys if keys else {}
+        return keys.get(rel_name, 'rel_pks')
+
+    def get_relationship_pk_field(self):
+        rel_name = self.get_related_field_name()
+        fields = self.relationship_pk_fields
+        fields = fields if fields else {}
+        return fields.get(rel_name, 'pk')
+
+    def is_to_many_relationship(self):
+        rel_name = self.get_related_field_name()
+        if self.model:
+            model = self.model
+        elif self.queryset:
+            model = self.queryset.model
+        else:
+            model = self.get_queryset().model
+        meta = model._meta
+        field_object, model, direct, m2m = meta.get_field_by_name(rel_name)
+        if direct:
+            return m2m
+        return field_object.field.rel.multiple
 
 
 class WithFormMixin(object):

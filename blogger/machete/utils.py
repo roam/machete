@@ -17,22 +17,38 @@ class RequestPayloadDescriptor(object):
 class RequestRelationshipDescriptor(object):
 
     def __init__(self, name, pks=None, many=False):
+        self.pks = pks if pks else []
         if not many and self.pks:
             raise ImproperlyConfigured('You cannot pass ids for a to-one '
                                        'relationship')
         self.name = name
-        self.pks = pks or []
         self.pk = None if len(self.pks) != 1 else self.pks[0]
+        self.many = many
 
 
 class RequestResourceDescriptor(object):
 
     def __init__(self, name, pks=None, relationship_descriptor=None):
         self.name = name
-        self.pks = pks or []
+        self.pks = pks if pks else []
         self.nr_pks = len(self.pks)
         self.pk = None if self.nr_pks != 1 else self.pks[0]
         self.relationship_descriptor = relationship_descriptor
+
+    @property
+    def to_many(self):
+        descriptor = self.relationship_descriptor
+        return None if not descriptor else descriptor.many
+
+    @property
+    def relationship_pk(self):
+        descriptor = self.relationship_descriptor
+        return None if not descriptor else descriptor.pk
+
+    @property
+    def relationship_pks(self):
+        descriptor = self.relationship_descriptor
+        return None if not descriptor else descriptor.pks
 
 
 class RequestContext(object):
@@ -79,8 +95,28 @@ class RequestContext(object):
         return self.resource_descriptor.pks
 
     @property
+    def relationship_pk(self):
+        return self.resource_descriptor.relationship_pk
+
+    @property
+    def relationship_pks(self):
+        return self.resource_descriptor.relationship_pks
+
+    @property
+    def to_many(self):
+        return self.resource_descriptor.to_many
+
+    @property
+    def is_resource_request(self):
+        return self.resource_descriptor.relationship_descriptor is None
+
+    @property
     def requested_single_resource(self):
         return self.pk is not None
+
+    @property
+    def requested_single_related_resource(self):
+        return self.relationship_pk is not None
 
 
 class RequestWithResourceContext(RequestContext):
