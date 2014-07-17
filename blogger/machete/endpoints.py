@@ -52,6 +52,7 @@ class GetEndpoint(View):
     def dispatch(self, request, *args, **kwargs):
         # Override dispatch to enable the handling or errors we can
         # handle.
+        self.relationship = kwargs.get('relationship')
         manager, m_args, m_kwargs = self.context_manager()
         try:
             with manager(*m_args, **m_kwargs):
@@ -79,11 +80,18 @@ class GetEndpoint(View):
     def get(self, request, *args, **kwargs):
         self.context = self.create_get_context(request)
         collection = False
-        if self.context.pk:
-            data = self.get_resource()
+        if self.relationship:
+            if self.context.relationship_pk:
+                data = self.get_linked_resource()
+            else:
+                data = self.get_linked_resources()
+                collection = True
         else:
-            data = self.get_resources()
-            collection = True
+            if self.context.pk:
+                data = self.get_resource()
+            else:
+                data = self.get_resources()
+                collection = True
         return self.create_http_response(data, collection=collection)
 
     def create_http_response(self, data, collection=False):
@@ -169,6 +177,10 @@ class GetEndpoint(View):
             filter = {'%s__in' % self.get_pk_field(): self.context.pks}
             qs = qs.filter(**filter)
         return qs
+
+    def get_linked_resources(self):
+        resource = self.get_resource()
+        return getattr(resource, self.relationship)
 
     def is_changed_besides(self, resource, model):
         # TODO Perform simple diff of serialized model with resource

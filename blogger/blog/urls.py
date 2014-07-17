@@ -9,6 +9,6 @@ from django.conf.urls import patterns, include, url
 from .views import PostsEndpoint
 
 urlpatterns = patterns('blog.views',
-    url(r'^posts$', csrf_exempt(PostsEndpoint.as_view()), name="posts"),
-    url(r'^posts/(?P<pks>([\w|\-|,]+))$', csrf_exempt(PostsEndpoint.as_view()), name="posts_detail"),
+    url(r'^posts$', csrf_exempt(PostsEndpoint.as_view()), name="api_posts"),
+    url(r'^posts/(?P<pks>([\w|\-|,]+))$', csrf_exempt(PostsEndpoint.as_view()), name="api_posts_detail"),
 )

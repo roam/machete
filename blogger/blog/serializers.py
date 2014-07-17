@@ -7,24 +7,22 @@ from machete.serializers import (ContextSerializer, LinksField,
                                  ForeignKeyIdField, ManyToManyIdField,
                                  AutoHrefField)
 
-from .models import Author, Tag, Comment
-
 
 class TagSerializer(Serializer):
     name = fields.String()
 
 
 class AuthorSerializer(ContextSerializer):
-    href = AutoHrefField('people')
+    #href = AutoHrefField('people')
 
     class Meta:
         additional = ('id', 'name',)
 
 
 class CommentSerializer(ContextSerializer):
-    href = AutoHrefField('comments')
+    #href = AutoHrefField('comments')
     links = LinksField({
-        'author': ForeignKeyIdField(model=Author, debug='commentauthor'),
+        'author': ForeignKeyIdField(relation_type='people'),
     })
     class Meta:
         additional = ('id', 'content', 'commenter',)
@@ -33,12 +31,15 @@ class CommentSerializer(ContextSerializer):
 class PostSerializer(ContextSerializer):
     href = AutoHrefField('posts')
     links = LinksField({
-        'author': ForeignKeyIdField(model=Author, relation_type='people', serializer='people'),
-        'tags': ManyToManyIdField(model=Tag, pk_field='name', serializer='tags'),
-        'comments': ManyToManyIdField(model=Comment, serializer='comments')
+        'author': ForeignKeyIdField(relation_type='people'),
+        'tags': ManyToManyIdField(pk_field='name'),
+        'comments': ManyToManyIdField(method='approved_comments')
     })
     class Meta:
         additional = ('id', 'title', 'content',)
+
+    def approved_comments(self, obj, context=None):
+        return obj.get_approved_comments()
 
 
 class_registry.register('tags', TagSerializer)
