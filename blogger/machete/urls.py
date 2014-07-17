@@ -12,10 +12,14 @@ def to_absolute_url(relative_url, request=None):
     return relative_url
 
 
-def get_resource_detail_url(name, pks):
-    view_name = 'api_%s_detail' % name
+def get_resource_detail_url(name, pks, **kwargs):
     pks = ','.join('%s' % i for i in pks)
-    return reverse(view_name, kwargs={'pks': pks})
+    kwargs['pks'] = pks
+    return reverse(create_resource_view_name(name), kwargs=kwargs)
+
+
+def create_resource_view_name(resource_name):
+    return 'api_%s_detail' % resource_name
 
 
 def get_resource_url_template(viewname, template, urlconf=None, kwargs=None, prefix=None, current_app=None, ids_group_name=None):

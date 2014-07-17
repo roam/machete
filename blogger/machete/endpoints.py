@@ -2,6 +2,7 @@
 from __future__ import (unicode_literals, print_function, division,
                         absolute_import)
 
+import sys
 import json
 from contextlib import contextmanager
 
@@ -58,7 +59,8 @@ class GetEndpoint(View):
             with manager(*m_args, **m_kwargs):
                 return super(GetEndpoint, self).dispatch(request, *args, **kwargs)
         except Exception as error:
-            return self.handle_error(error)
+            et, ei, tb = sys.exc_info()
+            return self.handle_error(error, tb)
 
     def options(self, request, *args, **kwargs):
         # From the JSON API FAQ:
@@ -78,6 +80,7 @@ class GetEndpoint(View):
         return self.get_methods()
 
     def get(self, request, *args, **kwargs):
+        #print(self.request.GET)
         self.context = self.create_get_context(request)
         collection = False
         if self.relationship:
@@ -131,9 +134,9 @@ class GetEndpoint(View):
 
         """
         context = self.context.__dict__
-        return serialize(self.get_resource_name(), data, many=collection, compound=True, context=context)
+        return serialize(self.get_resource_name(), data, many=collection, compound=compound, context=context)
 
-    def handle_error(self, error):
+    def handle_error(self, error, traceback=None):
         # TODO Improve error reporting
         error_object = {}
         if isinstance(error, FormValidationError):
@@ -145,7 +148,7 @@ class GetEndpoint(View):
         if isinstance(error, JsonApiError):
             error_object['message'] = '%s' % error
             return HttpResponse(self.create_json({'errors': error_object}), status=500)
-        raise error
+        raise error.__class__, error, traceback
 
     def postprocess_response(self, response, data, response_data, collection):
         """
