@@ -369,9 +369,9 @@ class PostMixin(object):
 
     def create_resource_url(self, pks):
         kwargs = {self.pks_url_key: pks}
-        return reverse(self.get_url_name('detail'), kwargs=kwargs)
+        return reverse(self.get_url_name(), kwargs=kwargs)
 
-    def get_url_name(self, url_type):
+    def get_url_name(self):
         return create_resource_view_name(self.get_resource_name())
 
 
