@@ -28,3 +28,4 @@ class Comments(GetEndpoint):
 class Tags(GetEndpoint):
     resource_name = 'tags'
     model = Tag
+    pk_field = 'name'
