@@ -96,15 +96,20 @@ class GetEndpoint(View):
         self.context = self.create_get_context(request)
         collection = False
         if self.context.is_resource_request:
+            # The request is mapped to the resource, not a relationship
             if self.context.requested_single_resource:
                 data = self.get_resource()
             else:
                 data = self.get_resources()
                 collection = True
         else:
+            # We're dealing with a request for a related resource
             if self.context.requested_single_related_resource or not self.context.to_many:
+                # Either a single relationship id was passed in or the
+                # relationship is a to-one
                 data = self.get_related_resource()
             else:
+                # Multiple relationship ids or a to-many relationship
                 data = self.get_related_resources()
                 collection = True
         return self.create_http_response(data, collection=collection)
@@ -142,10 +147,10 @@ class GetEndpoint(View):
         Serializes the data.
 
         Note that a serializer must have been registered with the name
-        of this resource.
+        of this resource or relationship, depending on the request type.
 
         """
-        name = self.get_resource_name()
+        name = self.resource_name
         if not self.context.is_resource_request:
             name = self.relationship_name
         context = self.context.__dict__
@@ -199,6 +204,13 @@ class GetEndpoint(View):
         return qs
 
     def get_related_resource(self):
+        """
+        Handles the retrieval of a related resource.
+
+        This will be called when either a single relationship instance
+        was requested or the relationship is to-one.
+
+        """
         field_name = self.get_related_field_name()
         resource = self.get_resource()
         field = getattr(resource, field_name)
@@ -210,6 +222,13 @@ class GetEndpoint(View):
         return field.get(**filter)
 
     def get_related_resources(self):
+        """
+        Handles the retrieval of multiple related resources.
+
+        This will be called when either a multiple relationship
+        instances were requested or no ids were supplied.
+
+        """
         field_name = self.get_related_field_name()
         resource = self.get_resource()
         rel = getattr(resource, field_name)
@@ -255,15 +274,6 @@ class GetEndpoint(View):
                                        % self.__class__.__name__)
         return queryset
 
-    def get_resource_name(self):
-        """
-        Determines the name of this resource.
-
-        Override this method or set ``resource_name`` on the class.
-
-        """
-        return self.resource_name
-
     def get_content_type(self):
         """
         Determines the content type of responses.
@@ -284,7 +294,7 @@ class GetEndpoint(View):
         if self.relationship_name:
             many = self.is_to_many_relationship()
             rel_descriptor = RequestContext.create_relationship_descriptor(self.relationship_name, rel_pks, many)
-        resource_descriptor = RequestContext.create_resource_descriptor(self.get_resource_name(), pks, rel_descriptor)
+        resource_descriptor = RequestContext.create_resource_descriptor(self.resource_name, pks, rel_descriptor)
         context = RequestContext(request, resource_descriptor)
         context.update_mode('GET')
         return context
@@ -300,7 +310,7 @@ class GetEndpoint(View):
         body = request.body
         if not body:
             raise MissingRequestBody()
-        resource_name = self.get_resource_name()
+        resource_name = self.resource_name
         try:
             data = self.parse_json(body)
             if not resource_name in data:
@@ -315,20 +325,6 @@ class GetEndpoint(View):
             return RequestPayloadDescriptor(resource_name, resource, resources)
         except ValueError:
             raise InvalidDataFormat()
-
-    def parse_json(self, data):
-        return json.loads(data)
-
-    def create_json(self, data, *args, **kwargs):
-        return json.dumps(data, *args, **kwargs)
-
-    def get_methods(self):
-        return self.methods
-
-    def context_manager(self):
-        if self.request.method in ['POST', 'PUT', 'DELETE', 'PATCH']:
-            return (transaction.atomic, [], {})
-        return (not_atomic, [], {})
 
     def get_related_field_name(self):
         # TODO Use serializer to find correct name by default
@@ -359,6 +355,20 @@ class GetEndpoint(View):
         if direct:
             return m2m
         return field_object.field.rel.multiple
+
+    def parse_json(self, data):
+        return json.loads(data)
+
+    def create_json(self, data, *args, **kwargs):
+        return json.dumps(data, *args, **kwargs)
+
+    def get_methods(self):
+        return self.methods
+
+    def context_manager(self):
+        if self.request.method in ['POST', 'PUT', 'DELETE', 'PATCH']:
+            return (transaction.atomic, [], {})
+        return (not_atomic, [], {})
 
 
 class WithFormMixin(object):
@@ -392,7 +402,7 @@ class WithFormMixin(object):
         """Last chance to tweak the data being passed to the form."""
         if instance:
             original = self.serialize(instance, compound=False)
-            original = original[self.get_resource_name()]
+            original = original[self.resource_name]
             merged = dict(original.items() + original.get('links', {}).items())
             data = dict(resource.items() + resource.get('links', {}).items())
             for field, value in data.items():
@@ -429,7 +439,7 @@ class PostMixin(object):
 
     def create_post_context(self, request):
         payload = self.extract_resources(request)
-        descriptor = RequestContext.create_resource_descriptor(self.get_resource_name())
+        descriptor = RequestContext.create_resource_descriptor(self.resource_name)
         context = RequestWithResourceContext(request, descriptor, payload, status=201)
         context.update_mode('POST')
         return context
@@ -444,7 +454,7 @@ class PostMixin(object):
     def postprocess_response(self, response, data, response_data, collection):
         if self.context.status != 201:
             return response
-        pks = ','.join(pluck_ids(response_data, self.get_resource_name()))
+        pks = ','.join(pluck_ids(response_data, self.resource_name))
         location = self.create_resource_url(pks)
         response['Location'] = location
         return response
@@ -454,7 +464,7 @@ class PostMixin(object):
         return reverse(self.get_url_name(), kwargs=kwargs)
 
     def get_url_name(self):
-        return create_resource_view_name(self.get_resource_name())
+        return create_resource_view_name(self.resource_name)
 
 
 class PostWithFormMixin(PostMixin, WithFormMixin):
@@ -506,7 +516,7 @@ class PutMixin(object):
         pks = self.kwargs.get(self.pks_url_key, '')
         pks = pks.split(',') if pks else []
         payload = self.extract_resources(request)
-        descriptor = RequestContext.create_resource_descriptor(self.get_resource_name(), pks)
+        descriptor = RequestContext.create_resource_descriptor(self.resource_name, pks)
         context = RequestWithResourceContext(request, descriptor, payload, status=200)
         context.update_mode('PUT')
         return context
@@ -571,7 +581,7 @@ class DeleteMixin(object):
     def create_delete_context(self, request):
         pks = self.kwargs.get(self.pks_url_key, '')
         pks = pks.split(',') if pks else []
-        descriptor = RequestContext.create_resource_descriptor(self.get_resource_name(), pks)
+        descriptor = RequestContext.create_resource_descriptor(self.resource_name, pks)
         context = RequestContext(request, descriptor)
         context.update_mode('DELETE')
         return context
