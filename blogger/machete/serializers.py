@@ -2,7 +2,7 @@
 from __future__ import (unicode_literals, print_function, division,
                         absolute_import)
 
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 
 from marshmallow import Serializer, fields, class_registry
 from django.db.models import get_model
@@ -27,19 +27,21 @@ class JsonApiSerializer(object):
         context = kwargs['context']
         serializer = serializer_class(*args, **kwargs)
         serialized_data = serializer.data
-        data = {self.name: serialized_data}
         ids_by_type, ids_by_name = self.collect_ids(serialized_data, serializer)
         require_links = ['%s.%s' % (self.name, k) for k in ids_by_name.keys()]
         linked_links = []
+        linked = None
         if self.compound:
             linked, linked_links = self.serialize_linked(serializer, ids_by_type)
-            if linked:
-                data['linked'] = linked
         links = self.compile_links(require_links, context)
         linked_links = self.compile_links(linked_links, context, self.name + '.')
         links = dict(linked_links.items() + links.items())
+        data = OrderedDict()
         if links:
             data['links'] = links
+        data[self.name] = serialized_data
+        if linked:
+            data['linked'] = linked
         return data
 
     def compile_links(self, paths, context, serializer_path_prefix=None):
@@ -259,6 +261,8 @@ class AutoHrefField(fields.Raw):
         self.resource_name = resource_name
 
     def output(self, key, obj):
+        # TODO There's still an issue with nested components in which
+        # the context isn't passed
         ids = [obj.pk]
         url = get_resource_detail_url(self.resource_name, ids)
         return to_absolute_url(url, self.parent.context.get('request'))

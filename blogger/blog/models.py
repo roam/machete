@@ -16,7 +16,7 @@ class Person(models.Model):
 class Post(models.Model):
     title = models.CharField(max_length=300)
     content = models.TextField(blank=True)
-    tags = models.ManyToManyField(Tag, blank=True, null=True)
+    tags = models.ManyToManyField(Tag, blank=True, null=True, related_name='posts')
     author = models.ForeignKey(Person)
 
     def get_approved_comments(self):

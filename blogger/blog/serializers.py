@@ -11,6 +11,9 @@ from machete.serializers import (ContextSerializer, LinksField,
 class TagSerializer(ContextSerializer):
     TYPE = 'tags'
     id = fields.String(attribute='name')
+    links = LinksField({
+        'posts': ManyToManyIdField(relation_type='posts', model='blog.Post'),
+    })
 
 
 class AuthorSerializer(ContextSerializer):
@@ -26,6 +29,7 @@ class CommentSerializer(ContextSerializer):
     #href = AutoHrefField('comments')
     links = LinksField({
         'author': ForeignKeyIdField(relation_type='people', model='blog.Person'),
+        'post': ForeignKeyIdField(relation_type='posts', model='blog.Post'),
     })
     class Meta:
         additional = ('id', 'content', 'commenter',)
@@ -33,7 +37,7 @@ class CommentSerializer(ContextSerializer):
 
 class PostSerializer(ContextSerializer):
     TYPE = 'posts'
-    href = AutoHrefField('posts')
+    #href = AutoHrefField('posts')
     links = LinksField({
         'author': ForeignKeyIdField(relation_type='people', model='blog.Person'),
         'tags': ManyToManyIdField(pk_field='name', model='blog.Tag'),

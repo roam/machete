@@ -13,6 +13,7 @@ from django.core.urlresolvers import reverse
 from django.http import HttpResponse, Http404
 
 from .serializers import serialize
+from .urls import create_resource_view_name
 from .exceptions import (JsonApiError, MissingRequestBody, InvalidDataFormat,
                          IdMismatch, FormValidationError)
 from .utils import RequestContext, RequestWithResourceContext, pluck_ids
@@ -338,18 +339,10 @@ class PostMixin(object):
     """
     Provides support for POST requests on resources.
 
-    Since a successful response must include a location header, you
-    should set ``url_name`` or ``url_name_detail``, or override the
-    ``create_resource_url`` method.
-
     The ``create_resource`` method must be implemented to actually do
     something.
 
     """
-
-    url_name_detail = None
-    url_name_list = None
-    url_name = None
 
     def get_methods(self):
         return super(PostMixin, self).get_methods() + ['post']
@@ -392,11 +385,7 @@ class PostMixin(object):
         return reverse(self.get_url_name('detail'), kwargs=kwargs)
 
     def get_url_name(self, url_type):
-        if url_type == 'detail' and self.url_name_detail:
-            return self.url_name_detail
-        if url_type == 'list' and self.url_name_list:
-            return self.url_name_list
-        return self.url_name
+        return create_resource_view_name(self.get_resource_name())
 
 
 class PostWithFormMixin(PostMixin, WithFormMixin):
