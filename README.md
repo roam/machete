@@ -86,3 +86,12 @@ Seed data (run `python manage.py shell` and paste the code below):
     comment = Comment(commenter='vi4gr4', content='Get it here')
     comment.post = machete_bugfix
     comment.save()
+
+
+## TO DO
+
+- [Updating relationships](http://jsonapi.org/format/#crud-updating-relationships)
+- [Decent errors](http://jsonapi.org/format/#errors)
+- [PATCH support](http://jsonapi.org/format/#patch)
+- [HTTP Caching](http://jsonapi.org/format/#http-caching)
+- Fixing passing of context to nested serializers in marshmallow
