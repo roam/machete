@@ -206,7 +206,7 @@ class RelationIdField(fields.Raw):
         return related
 
 
-class ManyToManyIdField(RelationIdField):
+class ToManyIdField(RelationIdField):
 
     def output(self, key, obj):
         related = self.get_related(key, obj)
@@ -217,7 +217,7 @@ class ManyToManyIdField(RelationIdField):
         return None
 
 
-class ForeignKeyIdField(RelationIdField):
+class ToOneIdField(RelationIdField):
 
     def output(self, key, obj):
         related = self.get_related(key, obj)

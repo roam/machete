@@ -4,7 +4,7 @@ from __future__ import (unicode_literals, print_function, division,
 
 from marshmallow import fields, class_registry
 from machete.serializers import (ContextSerializer, LinksField,
-                                 ForeignKeyIdField, ManyToManyIdField,
+                                 ToOneIdField, ToManyIdField,
                                  AutoHrefField)
 
 
@@ -12,14 +12,14 @@ class TagSerializer(ContextSerializer):
     TYPE = 'tags'
     id = fields.String(attribute='name')
     links = LinksField({
-        'posts': ManyToManyIdField(relation_type='posts', model='blog.Post'),
+        'posts': ToManyIdField(relation_type='posts', model='blog.Post'),
     })
 
 
 class AuthorSerializer(ContextSerializer):
     TYPE = 'people'
     links = LinksField({
-        'posts': ManyToManyIdField(relation_type='posts', model='blog.Post', attribute='post_set'),
+        'posts': ToManyIdField(relation_type='posts', model='blog.Post', attribute='post_set'),
     })
     #href = AutoHrefField('people')
 
@@ -31,8 +31,8 @@ class CommentSerializer(ContextSerializer):
     TYPE = 'comments'
     #href = AutoHrefField('comments')
     links = LinksField({
-        'author': ForeignKeyIdField(relation_type='people', model='blog.Person'),
-        'post': ForeignKeyIdField(relation_type='posts', model='blog.Post'),
+        'author': ToOneIdField(relation_type='people', model='blog.Person'),
+        'post': ToOneIdField(relation_type='posts', model='blog.Post'),
     })
     class Meta:
         additional = ('id', 'content', 'commenter',)
@@ -42,9 +42,9 @@ class PostSerializer(ContextSerializer):
     TYPE = 'posts'
     #href = AutoHrefField('posts')
     links = LinksField({
-        'author': ForeignKeyIdField(relation_type='people', model='blog.Person'),
-        'tags': ManyToManyIdField(pk_field='name', model='blog.Tag'),
-        'comments': ManyToManyIdField(method='approved_comments', model='blog.Comment')
+        'author': ToOneIdField(relation_type='people', model='blog.Person'),
+        'tags': ToManyIdField(pk_field='name', model='blog.Tag'),
+        'comments': ToManyIdField(method='approved_comments', model='blog.Comment')
     })
     class Meta:
         additional = ('id', 'title', 'content',)
