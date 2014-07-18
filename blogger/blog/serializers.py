@@ -18,6 +18,9 @@ class TagSerializer(ContextSerializer):
 
 class AuthorSerializer(ContextSerializer):
     TYPE = 'people'
+    links = LinksField({
+        'posts': ManyToManyIdField(relation_type='posts', model='blog.Post', attribute='post_set'),
+    })
     #href = AutoHrefField('people')
 
     class Meta:

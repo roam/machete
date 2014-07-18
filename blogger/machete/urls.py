@@ -7,8 +7,15 @@ from django.conf.urls import patterns, url as url_pattern
 
 
 def patterns_for(endpoint_cls, relationship_name=None, to_many=False, **initkwargs):
-    endpoint = endpoint_cls.endpoint(relationship_name, **initkwargs)
     resource_name = endpoint_cls.resource_name
+    if relationship_name:
+        endpoint = endpoint_cls.endpoint(relationship_name, **initkwargs)
+    else:
+        relationship_name = getattr(endpoint_cls, 'relationship_name', None)
+        if relationship_name:
+            endpoint = endpoint_cls.endpoint(relationship_name, **initkwargs)
+        else:
+            endpoint = endpoint_cls.endpoint(**initkwargs)
     endpoint_url = resource_name
     urls = []
     if relationship_name:

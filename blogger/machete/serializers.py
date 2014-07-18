@@ -14,9 +14,10 @@ from .urls import (get_resource_url_template, get_resource_detail_url,
 
 class JsonApiSerializer(object):
 
-    def __init__(self, name, compound=False):
+    def __init__(self, name, compound=False, self_link=False):
         self.name = name
         self.compound = compound
+        self.self_link = self_link
 
     def serialize(self, *args, **kwargs):
         serializer_class = kwargs.pop('serializer', None)
@@ -36,6 +37,11 @@ class JsonApiSerializer(object):
         links = self.compile_links(require_links, context)
         linked_links = self.compile_links(linked_links, context, self.name + '.')
         links = dict(linked_links.items() + links.items())
+        if self.self_link and not self.name in links:
+            links[self.name] = {
+                'href': serializer.get_detail_url_template(self.name, context),
+                'type': serializer.TYPE
+            }
         data = OrderedDict()
         if links:
             data['links'] = links
@@ -131,7 +137,8 @@ class JsonApiSerializer(object):
 
 def serialize(name, *args, **kwargs):
     compound = kwargs.pop('compound', False)
-    return JsonApiSerializer(name, compound=compound).serialize(*args, **kwargs)
+    self_link = kwargs.pop('self_link', False)
+    return JsonApiSerializer(name, compound=compound, self_link=self_link).serialize(*args, **kwargs)
 
 
 class NestedManyToMany(fields.Nested):
