@@ -2,6 +2,7 @@
 from __future__ import (unicode_literals, print_function, division,
                         absolute_import)
 
+from datetime import datetime
 from collections import defaultdict, OrderedDict
 
 from marshmallow import Serializer, fields, class_registry
@@ -10,6 +11,30 @@ from django.core.exceptions import ImproperlyConfigured
 
 from .urls import (get_resource_url_template, get_resource_detail_url,
                    to_absolute_url, create_resource_view_name)
+
+
+class Registry(object):
+    """
+    Registry for serializers preventing multiple registrations for the
+    same type.
+
+    """
+
+    def __init__(self):
+        self.registry = {}
+
+    def register(self, serializer_class, name=None):
+        if not name:
+            name = serializer_class.TYPE
+        if name not in self.registry:
+            self.registry[name] = True
+            class_registry.register(name, serializer_class)
+
+    def get_class(self, name):
+        return class_registry.get_class(name)
+
+
+registry = Registry()
 
 
 class JsonApiSerializer(object):
@@ -139,6 +164,14 @@ def serialize(name, *args, **kwargs):
     compound = kwargs.pop('compound', False)
     self_link = kwargs.pop('self_link', False)
     return JsonApiSerializer(name, compound=compound, self_link=self_link).serialize(*args, **kwargs)
+
+
+class UtcDateTime(fields.Raw):
+
+    def format(self, value):
+        if isinstance(value, datetime):
+            return value.strftime('%Y-%m-%dT%H:%M:%SZ')
+        return value.strftime('%Y-%m-%d')
 
 
 class NestedManyToMany(fields.Nested):
@@ -280,6 +313,10 @@ class ContextSerializer(Serializer):
     def get_detail_url_template(self, path, context):
         import urllib
         name = create_resource_view_name(self.TYPE)
-        relative = get_resource_url_template(name, '{%s}' % path)
+        kwargs = self.get_detail_url_template_kwargs(path, context)
+        relative = get_resource_url_template(name, '{%s}' % path, kwargs=kwargs)
         url = to_absolute_url(relative, context.get('request'))
         return urllib.unquote(url).decode('utf-8')
+
+    def get_detail_url_template_kwargs(self, path, context, **kwargs):
+        return kwargs

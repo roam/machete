@@ -151,6 +151,7 @@ class GetEndpoint(View):
         error_object = {}
         if isinstance(error, FormValidationError):
             error_object['message'] = '%s' % error
+            error_object['errors'] = ['%s' % e for e in error.form.errors]
             return HttpResponse(self.create_json({'errors': error_object}), status=400)
         if isinstance(error, Http404):
             error_object['message'] = '%s' % error
@@ -401,7 +402,6 @@ class GetLinkedEndpoint(GetEndpoint):
         return field_object.field.rel.multiple
 
 
-
 class WithFormMixin(object):
     """
     Mixin supporting create and update of resources with a model form.
@@ -418,6 +418,12 @@ class WithFormMixin(object):
 
     def get_form_class(self):
         return self.form_class
+
+    def form_valid(self, form):
+        return form.save()
+
+    def form_invalid(self, form):
+        raise FormValidationError('', form=form)
 
     def get_form(self, resource, instance=None):
         """Constructs a new form instance with the supplied data."""
@@ -507,8 +513,8 @@ class PostWithFormMixin(PostMixin, WithFormMixin):
     def create_resource(self, resource):
         form = self.get_form(resource)
         if form.is_valid():
-            return form.save()
-        raise FormValidationError('', form=form)
+            return self.form_valid(form)
+        return self.form_invalid(form)
 
 
 class PutMixin(object):
@@ -580,9 +586,9 @@ class PutWithFormMixin(PutMixin, WithFormMixin):
         instance = self.get_queryset().get(**filter)
         form = self.get_form(resource, instance)
         if form.is_valid():
-            model = form.save()
+            model = self.form_valid(form)
             return self.is_changed_besides(resource, model), model
-        raise FormValidationError('', form=form)
+        return self.form_invalid(form)
 
 
 class DeleteMixin(object):
