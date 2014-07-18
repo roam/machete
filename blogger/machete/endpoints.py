@@ -62,6 +62,11 @@ class GetEndpoint(View):
     def dispatch(self, request, *args, **kwargs):
         # Override dispatch to enable the handling or errors we can
         # handle.
+        # Because Django 1.4 only sets the request parameters in
+        # dispatch we'll set them right now ourselves.
+        self.request = request
+        self.args = args
+        self.kwargs = kwargs
         manager, m_args, m_kwargs = self.context_manager()
         try:
             with manager(*m_args, **m_kwargs):
@@ -262,7 +267,7 @@ class GetEndpoint(View):
             else:
                 resource = obj
                 resources = [obj]
-            return RequestPayloadDescriptor(resource_name, resource, resources)
+            return RequestPayloadDescriptor(resource_name, resources, resource)
         except ValueError:
             raise InvalidDataFormat()
 
