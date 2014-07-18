@@ -3,7 +3,6 @@ from __future__ import (unicode_literals, print_function, division,
                         absolute_import)
 
 import sys
-import json
 from contextlib import contextmanager
 
 from django.views.decorators.csrf import csrf_exempt
@@ -19,7 +18,7 @@ from .exceptions import (JsonApiError, MissingRequestBody, InvalidDataFormat,
                          IdMismatch, FormValidationError)
 from .utils import (RequestContext, RequestWithResourceContext, pluck_ids,
                     RequestPayloadDescriptor)
-
+from . import json
 
 @contextmanager
 def not_atomic(using=None):

@@ -2,16 +2,16 @@
 from __future__ import (unicode_literals, print_function, division,
                         absolute_import)
 
-import json
-from datetime import datetime
+import datetime
 from collections import defaultdict, OrderedDict
 
-from marshmallow import Serializer, fields, class_registry
+from marshmallow import serializer, Serializer, fields, class_registry
 from django.db.models import get_model
 from django.core.exceptions import ImproperlyConfigured
 
 from .urls import (get_resource_url_template, get_resource_detail_url,
                    to_absolute_url, create_resource_view_name)
+from .json import dumps
 
 
 class Registry(object):
@@ -162,7 +162,7 @@ class JsonApiSerializer(object):
 
 def serialize_to_json(name, *args, **kwargs):
     data = serialize(name, *args, **kwargs)
-    return json.dumps(data)
+    return dumps(data)
 
 
 def serialize(name, *args, **kwargs):
@@ -174,7 +174,7 @@ def serialize(name, *args, **kwargs):
 class UtcDateTime(fields.Raw):
 
     def format(self, value):
-        if isinstance(value, datetime):
+        if isinstance(value, datetime.datetime):
             return value.strftime('%Y-%m-%dT%H:%M:%SZ')
         return value.strftime('%Y-%m-%d')
 
@@ -313,7 +313,16 @@ class AutoHrefField(fields.Raw):
         return to_absolute_url(url, self.parent.context.get('request'))
 
 
+# TODO Custom meta class?
+serializer.BaseSerializer.TYPE_MAPPING[datetime.datetime] = fields.Raw
+serializer.BaseSerializer.TYPE_MAPPING[datetime.date] = fields.Raw
+serializer.BaseSerializer.TYPE_MAPPING[datetime.time] = fields.Raw
+
+
 class ContextSerializer(Serializer):
+
+    def __init__(self, *args, **kwargs):
+        super(ContextSerializer, self).__init__(*args, **kwargs)
 
     def get_detail_url_template(self, path, context):
         import urllib
