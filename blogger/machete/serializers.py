@@ -2,6 +2,7 @@
 from __future__ import (unicode_literals, print_function, division,
                         absolute_import)
 
+import json
 from datetime import datetime
 from collections import defaultdict, OrderedDict
 
@@ -158,6 +159,10 @@ class JsonApiSerializer(object):
                 by_name[name] |= set(value)
         return by_type, by_name
 
+
+def serialize_to_json(name, *args, **kwargs):
+    data = serialize(name, *args, **kwargs)
+    return json.dumps(data)
 
 
 def serialize(name, *args, **kwargs):
