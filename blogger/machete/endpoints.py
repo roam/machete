@@ -99,9 +99,9 @@ class GetEndpoint(View):
         else:
             data = self.get_resources()
             collection = True
-        return self.create_http_response(data, collection=collection)
+        return self.create_http_response(data, collection=collection, compound=True)
 
-    def create_http_response(self, data, collection=False):
+    def create_http_response(self, data, collection=False, compound=False):
         """
         Creates a HTTP response from the data.
 
@@ -122,7 +122,7 @@ class GetEndpoint(View):
             response_data = data
         else:
             # Everything else: run it through the serialization process
-            response_data = self.serialize(data, collection=collection)
+            response_data = self.serialize(data, collection=collection, compound=compound)
         json_data = self.create_json(response_data, indent=2)
         status = self.context.status
         content_type = self.get_content_type()
