@@ -110,6 +110,8 @@ class JsonApiSerializer(object):
         linked = {}
         field = serializer.fields.get('links')
         require_link = []
+        if not field:
+            return linked, require_link
         for field_name, relationship_field in field.link_fields.items():
             rel_type = relationship_field.get_relation_type()
             ids = ids_by_type.get(rel_type)
