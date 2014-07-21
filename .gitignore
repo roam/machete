@@ -53,3 +53,4 @@ docs/_build/
 target/
 
 blogger/db.sqlite3
+.venv
