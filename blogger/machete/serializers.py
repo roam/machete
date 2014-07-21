@@ -336,3 +336,16 @@ class ContextSerializer(Serializer):
 
     def get_detail_url_template_kwargs(self, path, context, **kwargs):
         return kwargs
+
+    def _update_data(self):
+        super(ContextSerializer, self)._update_data()
+        data = self._data
+        if self.many:
+            items = data
+        else:
+            items = [data]
+        for item in items:
+            if 'id' in item:
+                pk = item.get('id', None)
+                if pk:
+                    item['id'] = '%s' % pk
