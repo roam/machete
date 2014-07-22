@@ -6,6 +6,8 @@ from marshmallow import fields, class_registry
 from machete.serializers import (ContextSerializer, LinksField, ToOneIdField,
                                  ToManyIdField, AutoHrefField)
 
+from .models import Post
+
 
 class TagSerializer(ContextSerializer):
     TYPE = 'tags'
@@ -46,7 +48,7 @@ class PostSerializer(ContextSerializer):
         'comments': ToManyIdField(method='approved_comments', model='blog.Comment')
     })
     class Meta:
-        additional = ('id', 'title', 'content',)
+        model = Post
 
     def approved_comments(self, obj, context=None):
         return obj.get_approved_comments()

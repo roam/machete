@@ -6,7 +6,7 @@ import datetime
 from collections import defaultdict, OrderedDict
 
 from marshmallow import serializer, Serializer, fields, class_registry
-from django.db.models import get_model
+from django.db.models import get_model, ForeignKey, ManyToManyField
 from django.core.exceptions import ImproperlyConfigured
 
 from .urls import (get_resource_url_template, get_resource_detail_url,
@@ -315,16 +315,26 @@ class AutoHrefField(fields.Raw):
         return to_absolute_url(url, self.parent.context.get('request'))
 
 
-# TODO Custom meta class?
-serializer.BaseSerializer.TYPE_MAPPING[datetime.datetime] = fields.Raw
-serializer.BaseSerializer.TYPE_MAPPING[datetime.date] = fields.Raw
-serializer.BaseSerializer.TYPE_MAPPING[datetime.time] = fields.Raw
+class Options(serializer.SerializerOpts):
+
+    def __init__(self, meta):
+        model = getattr(meta, 'model', None)
+        if model:
+            self.model = model
+            additional = getattr(meta, 'additional', None)
+            additional = [] if not additional else list(additional)
+            opts = model._meta
+            for name in opts.get_all_field_names():
+                field, model, direct, m2m = opts.get_field_by_name(name)
+                link = isinstance(field, (ForeignKey, ManyToManyField,))
+                if direct and not link:
+                    additional.append(name)
+            setattr(meta, 'additional', additional)
+        super(Options, self).__init__(meta)
 
 
 class ContextSerializer(Serializer):
-
-    def __init__(self, *args, **kwargs):
-        super(ContextSerializer, self).__init__(*args, **kwargs)
+    OPTIONS_CLASS = Options
 
     def get_detail_url_template(self, path, context):
         import urllib
@@ -349,3 +359,10 @@ class ContextSerializer(Serializer):
                 pk = item.get('id', None)
                 if pk:
                     item['id'] = '%s' % pk
+
+
+ContextSerializer.TYPE_MAPPING.update({
+    datetime.datetime: fields.Raw,
+    datetime.date: fields.Raw,
+    datetime.time: fields.Raw
+})
