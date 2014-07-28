@@ -142,7 +142,7 @@ class GetEndpoint(View):
         self_link = self.include_link_to_self
         fields = self.context.resource_descriptor.fields
         only = fields if fields else None
-        return serialize(name, data, many=collection, compound=compound, context=context, self_link=self_link, only=fields)
+        return serialize(name, data, many=collection, compound=compound, context=context, self_link=self_link, only=only)
 
     def get_resource_type(self):
         return self.resource_name
@@ -153,13 +153,13 @@ class GetEndpoint(View):
         if isinstance(error, FormValidationError):
             error_object['message'] = '%s' % error
             error_object['errors'] = ['%s' % e for e in error.form.errors]
-            return HttpResponse(self.create_json({'errors': error_object}), status=400)
+            return HttpResponse(self.create_json({'errors': [error_object]}), status=400)
         if isinstance(error, Http404):
             error_object['message'] = '%s' % error
-            return HttpResponse(self.create_json({'errors': error_object}), status=404)
+            return HttpResponse(self.create_json({'errors': [error_object]}), status=404)
         if isinstance(error, JsonApiError):
             error_object['message'] = '%s' % error
-            return HttpResponse(self.create_json({'errors': error_object}), status=500)
+            return HttpResponse(self.create_json({'errors': [error_object]}), status=500)
         raise error.__class__, error, traceback
 
     def postprocess_response(self, response, data, response_data, collection):
