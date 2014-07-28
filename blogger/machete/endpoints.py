@@ -151,9 +151,17 @@ class GetEndpoint(View):
         # TODO Improve error reporting
         error_object = {}
         if isinstance(error, FormValidationError):
-            error_object['message'] = '%s' % error
-            error_object['errors'] = ['%s' % e for e in error.form.errors]
-            return HttpResponse(self.create_json({'errors': [error_object]}), status=400)
+            errors = []
+            for field, itemized_errors in error.form.errors.items():
+                composite = field == '__all__'
+                for e in itemized_errors:
+                    detail = {
+                        'detail': '%s' % e,
+                    }
+                    if not composite:
+                        detail['member'] = field
+                    errors.append(detail)
+            return HttpResponse(self.create_json({'errors': errors}), status=400)
         if isinstance(error, Http404):
             error_object['message'] = '%s' % error
             return HttpResponse(self.create_json({'errors': [error_object]}), status=404)
