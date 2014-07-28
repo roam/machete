@@ -28,12 +28,13 @@ class RequestRelationshipDescriptor(object):
 
 class RequestResourceDescriptor(object):
 
-    def __init__(self, name, pks=None, relationship_descriptor=None):
+    def __init__(self, name, pks=None, relationship_descriptor=None, fields=None):
         self.name = name
         self.pks = pks if pks else []
         self.nr_pks = len(self.pks)
         self.pk = None if self.nr_pks != 1 else self.pks[0]
         self.relationship_descriptor = relationship_descriptor
+        self.fields = fields
 
     @property
     def to_many(self):
@@ -79,8 +80,8 @@ class RequestContext(object):
         return None
 
     @classmethod
-    def create_resource_descriptor(cls, name, pks=None, relationship_descriptor=None):
-        return RequestResourceDescriptor(name, pks, relationship_descriptor)
+    def create_resource_descriptor(cls, name, pks=None, relationship_descriptor=None, fields=None):
+        return RequestResourceDescriptor(name, pks, relationship_descriptor, fields=fields)
 
     @classmethod
     def create_relationship_descriptor(cls, name, pks=None, many=False):

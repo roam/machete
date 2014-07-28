@@ -140,7 +140,9 @@ class GetEndpoint(View):
         name = self.get_resource_type()
         context = self.context.__dict__
         self_link = self.include_link_to_self
-        return serialize(name, data, many=collection, compound=compound, context=context, self_link=self_link)
+        fields = self.context.resource_descriptor.fields
+        only = fields if fields else None
+        return serialize(name, data, many=collection, compound=compound, context=context, self_link=self_link, only=fields)
 
     def get_resource_type(self):
         return self.resource_name
@@ -239,7 +241,9 @@ class GetEndpoint(View):
         """Creates the context for a GET request."""
         pks = self.kwargs.get(self.pks_url_key, '')
         pks = pks.split(',') if pks else []
-        resource_descriptor = RequestContext.create_resource_descriptor(self.resource_name, pks)
+        fields = request.GET.get('fields')
+        fields = None if not fields else fields.split(',')
+        resource_descriptor = RequestContext.create_resource_descriptor(self.resource_name, pks, fields=fields)
         context = RequestContext(request, resource_descriptor)
         context.update_mode('GET')
         return context
