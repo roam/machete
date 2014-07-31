@@ -65,7 +65,8 @@ class JsonApiSerializer(object):
             kwargs['context'] = {}
         context = kwargs['context']
         if 'only' in kwargs:
-            kwargs['only'] = filter_fields(serializer_class, kwargs['only'])
+            if kwargs['only']:
+                kwargs['only'] = filter_fields(serializer_class, kwargs['only'])
         serializer = serializer_class(*args, **kwargs)
         serialized_data = serializer.data
         ids_by_type, ids_by_name = self.collect_ids(serialized_data, serializer)
