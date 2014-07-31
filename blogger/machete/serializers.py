@@ -38,6 +38,18 @@ class Registry(object):
 registry = Registry()
 
 
+def filter_fields(serializer, fields):
+    meta = serializer.Meta
+    if hasattr(meta, 'fields'):
+        allowed = set(getattr(meta, 'fields'))
+    else:
+        allowed = [n for n, mapping in serializer._declared_fields.items()]
+        if hasattr(meta, 'additional'):
+            allowed = allowed + list(getattr(meta, 'additional'))
+        allowed = set(allowed)
+    return [f for f in fields if f in allowed]
+
+
 class JsonApiSerializer(object):
 
     def __init__(self, name, compound=False, self_link=False):
@@ -52,6 +64,8 @@ class JsonApiSerializer(object):
         if not 'context' in kwargs:
             kwargs['context'] = {}
         context = kwargs['context']
+        if 'only' in kwargs:
+            kwargs['only'] = filter_fields(serializer_class, kwargs['only'])
         serializer = serializer_class(*args, **kwargs)
         serialized_data = serializer.data
         ids_by_type, ids_by_name = self.collect_ids(serialized_data, serializer)
