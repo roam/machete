@@ -45,6 +45,7 @@ class GetEndpoint(View):
     queryset = None
     model = None
     form_class = None
+    filter_class = None
     include_link_to_self = False
 
     def __init__(self, *args, **kwargs):
@@ -185,7 +186,7 @@ class GetEndpoint(View):
 
         """
         filter = {self.get_pk_field(): self.context.pk}
-        return self.get_queryset().get(**filter)
+        return self.get_filtered_queryset().get(**filter)
 
     def get_resources(self):
         """
@@ -194,12 +195,18 @@ class GetEndpoint(View):
         Maps to ``GET /posts/1,2,3`` or ``GET /posts``.
 
         """
-        qs = self.get_queryset()
+        qs = self.get_filtered_queryset()
         if self.context.pks:
             filter = {'%s__in' % self.get_pk_field(): self.context.pks}
             qs = qs.filter(**filter)
         if not qs.exists():
             raise Http404()
+        return qs
+
+    def get_filtered_queryset(self):
+        qs = self.get_queryset()
+        if self.filter_class:
+            return self.filter_class(self.request.GET, queryset=qs).qs
         return qs
 
     def is_changed_besides(self, resource, model):
