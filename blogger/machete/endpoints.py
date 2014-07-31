@@ -199,7 +199,7 @@ class GetEndpoint(View):
         if self.context.pks:
             filter = {'%s__in' % self.get_pk_field(): self.context.pks}
             qs = qs.filter(**filter)
-        if not qs.exists():
+        if self.context.pks and not qs.exists():
             raise Http404()
         return qs
 
