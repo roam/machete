@@ -155,11 +155,10 @@ class GetEndpoint(View):
             for field, itemized_errors in error.form.errors.items():
                 composite = field == '__all__'
                 for e in itemized_errors:
-                    detail = {
-                        'detail': '%s' % e,
-                    }
+                    detail = {'detail': '%s' % e}
                     if not composite:
                         detail['member'] = field
+                        detail['member_label'] = '%s' % error.form.fields.get(field).label
                     errors.append(detail)
             return HttpResponse(self.create_json({'errors': errors}), status=400)
         if isinstance(error, Http404):
