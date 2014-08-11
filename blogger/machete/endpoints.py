@@ -564,7 +564,7 @@ class PutMixin(object):
             # > requests that modify links without affecting other attributes
             # > of a resource.
             return HttpResponse(status=204)
-        return self.create_http_response(data, collection=collection, detect_changes=True)
+        return self.create_http_response(data, collection=collection)
 
     def create_put_context(self, request):
         pks = self.kwargs.get(self.pks_url_key, '')
