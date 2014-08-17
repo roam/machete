@@ -48,7 +48,7 @@ class GetEndpoint(View):
     form_class = None
     filter_class = None
     include_link_to_self = False
-    use_etag = False
+    etag_attribute = None
 
     def __init__(self, *args, **kwargs):
         super(GetEndpoint, self).__init__(*args, **kwargs)
@@ -107,7 +107,7 @@ class GetEndpoint(View):
         return self.create_http_response(data, collection=collection, compound=True)
 
     def has_etag_changed(self, data, collection=False):
-        if not self.use_etag:
+        if not self.etag_attribute:
             return True
         etag = self.generate_etag(data, collection)
         if not etag:
@@ -116,13 +116,15 @@ class GetEndpoint(View):
         return not match or etag != match
 
     def generate_etag(self, data, collection):
+        if not self.etag_attribute:
+            return None
         if not hasattr(self, '_etag'):
             if isinstance(data, models.query.QuerySet):
-                pks = data.values_list(self.pk_field, flat=True)
+                pks = data.values_list(self.etag_attribute, flat=True)
             elif collection:
-                pks = [getattr(i, self.pk_field) for i in data]
+                pks = [getattr(i, self.etag_attribute) for i in data]
             else:
-                pks = [getattr(data, self.pk_field)]
+                pks = [getattr(data, self.etag_attribute)]
             etag = ','.join('%s' % pk for pk in pks)
             self._etag = hashlib.md5(etag).hexdigest()
         return self._etag
