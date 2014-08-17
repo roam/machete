@@ -3,6 +3,7 @@ from __future__ import (unicode_literals, print_function, division,
                         absolute_import)
 
 import sys
+import hashlib
 from contextlib import contextmanager
 
 from django.views.decorators.csrf import csrf_exempt
@@ -47,7 +48,7 @@ class GetEndpoint(View):
     form_class = None
     filter_class = None
     include_link_to_self = False
-    etag_attribute = None
+    use_etag = False
 
     def __init__(self, *args, **kwargs):
         super(GetEndpoint, self).__init__(*args, **kwargs)
@@ -101,27 +102,30 @@ class GetEndpoint(View):
         else:
             data = self.get_resources()
             collection = True
-        if not self.has_changed(data, collection):
+        if not self.has_etag_changed(data, collection):
             return HttpResponse(status=304)
         return self.create_http_response(data, collection=collection, compound=True)
 
-    def has_changed(self, data, collection=None):
-        etag = self.generate_data_etag(data)
+    def has_etag_changed(self, data, collection=False):
+        if not self.use_etag:
+            return True
+        etag = self.generate_etag(data, collection)
         if not etag:
             return True
         match = self.request.META.get('HTTP_IF_NONE_MATCH')
         return not match or etag != match
 
-    def create_etag(self, data, response_data, collection):
-        return self.generate_data_etag(data)
-
-    def generate_data_etag(self, data):
-        if self.etag_attribute:
-            maximum = data.aggregate(models.Max(self.etag_attribute))
-            maximum = maximum['%s__max' % self.etag_attribute]
-            if maximum:
-                return '%s' % maximum
-        return None
+    def generate_etag(self, data, collection):
+        if not hasattr(self, '_etag'):
+            if isinstance(data, models.query.QuerySet):
+                pks = data.values_list(self.pk_field, flat=True)
+            elif collection:
+                pks = [getattr(i, self.pk_field) for i in data]
+            else:
+                pks = [getattr(data, self.pk_field)]
+            etag = ','.join('%s' % pk for pk in pks)
+            self._etag = hashlib.md5(etag).hexdigest()
+        return self._etag
 
     def create_http_response(self, data, collection=False, compound=False):
         """
@@ -197,7 +201,7 @@ class GetEndpoint(View):
         objects, this is the place to do it.
 
         """
-        etag = self.create_etag(data, response_data, collection)
+        etag = self.generate_etag(data, collection)
         if etag:
             response['ETag'] = etag
         return response
