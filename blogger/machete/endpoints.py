@@ -6,7 +6,7 @@ import sys
 from contextlib import contextmanager
 
 from django.views.decorators.csrf import csrf_exempt
-from django.db import transaction
+from django.db import transaction, models
 from django.views.generic import View
 from django.core.exceptions import ImproperlyConfigured
 from django.core.urlresolvers import reverse
@@ -47,6 +47,7 @@ class GetEndpoint(View):
     form_class = None
     filter_class = None
     include_link_to_self = False
+    etag_attribute = None
 
     def __init__(self, *args, **kwargs):
         super(GetEndpoint, self).__init__(*args, **kwargs)
@@ -100,7 +101,27 @@ class GetEndpoint(View):
         else:
             data = self.get_resources()
             collection = True
+        if not self.has_changed(data, collection):
+            return HttpResponse(status=304)
         return self.create_http_response(data, collection=collection, compound=True)
+
+    def has_changed(self, data, collection=None):
+        etag = self.generate_data_etag(data)
+        if not etag:
+            return True
+        match = self.request.META.get('HTTP_IF_NONE_MATCH')
+        return not match or etag != match
+
+    def create_etag(self, data, response_data, collection):
+        return self.generate_data_etag(data)
+
+    def generate_data_etag(self, data):
+        if self.etag_attribute:
+            maximum = data.aggregate(models.Max(self.etag_attribute))
+            maximum = maximum['%s__max' % self.etag_attribute]
+            if maximum:
+                return '%s' % maximum
+        return None
 
     def create_http_response(self, data, collection=False, compound=False):
         """
@@ -176,6 +197,9 @@ class GetEndpoint(View):
         objects, this is the place to do it.
 
         """
+        etag = self.create_etag(data, response_data, collection)
+        if etag:
+            response['ETag'] = etag
         return response
 
     def get_resource(self):
@@ -506,6 +530,7 @@ class PostMixin(object):
         pass
 
     def postprocess_response(self, response, data, response_data, collection):
+        response = super(PostMixin, self).postprocess_response(response, data, response_data, collection)
         if self.context.status != 201:
             return response
         pks = ','.join(pluck_ids(response_data, self.resource_name))
