@@ -12,6 +12,7 @@ from django.views.generic import View
 from django.core.exceptions import ImproperlyConfigured
 from django.core.urlresolvers import reverse
 from django.http import HttpResponse, Http404
+from django.utils.http import quote_etag, parse_etags
 
 from .serializers import serialize
 from .urls import create_resource_view_name
@@ -103,7 +104,8 @@ class GetEndpoint(View):
             data = self.get_resources()
             collection = True
         if not self.has_etag_changed(data, collection):
-            return HttpResponse(status=304)
+            content_type = self.get_content_type()
+            return HttpResponse(status=304, content_type=content_type)
         return self.create_http_response(data, collection=collection, compound=True)
 
     def has_etag_changed(self, data, collection=False):
@@ -113,21 +115,26 @@ class GetEndpoint(View):
         if not etag:
             return True
         match = self.request.META.get('HTTP_IF_NONE_MATCH')
-        return not match or etag != match
+        if match:
+            values = parse_etags(match)
+            for value in values:
+                # Django append ";gzip" when gzip is enabled
+                clean_value = value.split(';')[0]
+                if clean_value == '*' or clean_value == etag:
+                    return False
+        return True
 
     def generate_etag(self, data, collection):
         if not self.etag_attribute:
             return None
-        if not hasattr(self, '_etag'):
-            if isinstance(data, models.query.QuerySet):
-                pks = data.values_list(self.etag_attribute, flat=True)
-            elif collection:
-                pks = [getattr(i, self.etag_attribute) for i in data]
-            else:
-                pks = [getattr(data, self.etag_attribute)]
-            etag = ','.join('%s' % pk for pk in pks)
-            self._etag = hashlib.md5(etag).hexdigest()
-        return self._etag
+        if isinstance(data, models.query.QuerySet):
+            pks = data.values_list(self.etag_attribute, flat=True)
+        elif collection:
+            pks = [getattr(i, self.etag_attribute) for i in data]
+        else:
+            pks = [getattr(data, self.etag_attribute)]
+        etag = ','.join('%s' % pk for pk in pks)
+        return hashlib.md5(etag).hexdigest()
 
     def create_http_response(self, data, collection=False, compound=False):
         """
@@ -205,7 +212,8 @@ class GetEndpoint(View):
         """
         etag = self.generate_etag(data, collection)
         if etag:
-            response['ETag'] = etag
+            response['ETag'] = quote_etag(etag)
+            response['Cache-Control'] = 'private, max-age=0'
         return response
 
     def get_resource(self):
