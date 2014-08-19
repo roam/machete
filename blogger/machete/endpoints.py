@@ -97,43 +97,39 @@ class GetEndpoint(View):
 
     def get(self, request, *args, **kwargs):
         self.context = self.create_get_context(request)
+        if not self.has_etag_changed():
+            content_type = self.get_content_type()
+            return HttpResponse(status=304, content_type=content_type)
         collection = False
         if self.context.requested_single_resource:
             data = self.get_resource()
         else:
             data = self.get_resources()
             collection = True
-        if not self.has_etag_changed(data, collection):
-            content_type = self.get_content_type()
-            return HttpResponse(status=304, content_type=content_type)
         return self.create_http_response(data, collection=collection, compound=True)
 
-    def has_etag_changed(self, data, collection=False):
+    def has_etag_changed(self):
         if not self.etag_attribute:
             return True
-        etag = self.generate_etag(data, collection)
+        etag = self.generate_etag()
         if not etag:
             return True
         match = self.request.META.get('HTTP_IF_NONE_MATCH')
         if match:
             values = parse_etags(match)
             for value in values:
-                # Django append ";gzip" when gzip is enabled
+                # Django appends ";gzip" when gzip is enabled
                 clean_value = value.split(';')[0]
                 if clean_value == '*' or clean_value == etag:
                     return False
         return True
 
-    def generate_etag(self, data, collection):
+    def generate_etag(self):
         if not self.etag_attribute:
             return None
-        if isinstance(data, models.query.QuerySet):
-            pks = data.values_list(self.etag_attribute, flat=True)
-        elif collection:
-            pks = [getattr(i, self.etag_attribute) for i in data]
-        else:
-            pks = [getattr(data, self.etag_attribute)]
-        etag = ','.join('%s' % pk for pk in pks)
+        qs = self.get_filtered_queryset()
+        values = qs.values_list(self.etag_attribute, flat=True)
+        etag = ','.join('%s' % value for value in values)
         return hashlib.md5(etag).hexdigest()
 
     def create_http_response(self, data, collection=False, compound=False):
