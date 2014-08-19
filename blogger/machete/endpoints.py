@@ -494,7 +494,6 @@ class WithFormMixin(object):
             as_json = self.create_json(self.serialize(instance, compound=False))
             original = json.loads(as_json)
             original = original[self.resource_name]
-            print(original)
             merged = dict(original.items() + original.get('links', {}).items())
             data = dict(resource.items() + resource.get('links', {}).items())
             for field, value in data.items():
