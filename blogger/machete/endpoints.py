@@ -489,8 +489,12 @@ class WithFormMixin(object):
     def prepare_form_data(self, resource, instance=None):
         """Last chance to tweak the data being passed to the form."""
         if instance:
-            original = self.serialize(instance, compound=False)
+            # The instance is converted to JSON and then loaded to ensure
+            # special encodings (like timezone-conversion) are performed
+            as_json = self.create_json(self.serialize(instance, compound=False))
+            original = json.loads(as_json)
             original = original[self.resource_name]
+            print(original)
             merged = dict(original.items() + original.get('links', {}).items())
             data = dict(resource.items() + resource.get('links', {}).items())
             for field, value in data.items():
