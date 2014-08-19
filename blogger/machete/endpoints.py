@@ -206,7 +206,7 @@ class GetEndpoint(View):
         objects, this is the place to do it.
 
         """
-        etag = self.generate_etag(data, collection)
+        etag = self.generate_etag()
         if etag:
             response['ETag'] = quote_etag(etag)
             response['Cache-Control'] = 'private, max-age=0'
