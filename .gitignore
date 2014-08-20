@@ -17,6 +17,8 @@ lib64/
 parts/
 sdist/
 var/
+venv-sdist/
+venv-wheel/
 *.egg-info/
 .installed.cfg
 *.egg

@@ -22,6 +22,7 @@ from .utils import (RequestContext, RequestWithResourceContext, pluck_ids,
                     RequestPayloadDescriptor)
 from . import json
 
+
 @contextmanager
 def not_atomic(using=None):
     yield
