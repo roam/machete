@@ -376,15 +376,13 @@ class GetLinkedEndpoint(GetEndpoint):
         was requested or the relationship is to-one.
 
         """
-        field_name = self.get_related_field_name()
-        resource = self.get_resource()
-        field = getattr(resource, field_name)
+        qs = self.get_related_queryset()
         if not self.context.to_many:
             # Since it's not a to-many, we can simply return the value
-            return field
+            return qs
         pk_field = self.get_relationship_pk_field()
         filter = {pk_field: self.context.relationship_pk}
-        return field.get(**filter)
+        return qs.get(**filter)
 
     def get_related_resources(self):
         """
@@ -394,10 +392,7 @@ class GetLinkedEndpoint(GetEndpoint):
         instances were requested or no ids were supplied.
 
         """
-        field_name = self.get_related_field_name()
-        resource = self.get_resource()
-        rel = getattr(resource, field_name)
-        qs = rel.all()
+        qs = self.get_related_queryset().all()
         if self.context.relationship_pks:
             pk_field = self.get_relationship_pk_field()
             filter = {'%s__in' % pk_field: self.context.relationship_pks}
@@ -405,6 +400,11 @@ class GetLinkedEndpoint(GetEndpoint):
         if not qs.exists():
             raise Http404()
         return qs
+
+    def get_related_queryset(self):
+        field_name = self.get_related_field_name()
+        resource = self.get_resource()
+        return getattr(resource, field_name)
 
     def get_resource_type(self):
         return self.relationship_name
