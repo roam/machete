@@ -248,7 +248,6 @@ class RelationIdField(fields.Raw):
         return getattr(threadlocal, 'cache', None)
 
     def get_instances(self, pks):
-        import logging
         if not self.use_caching:
             return self.get_queryset(pks).all()
         non_cached_pks = []
@@ -264,7 +263,6 @@ class RelationIdField(fields.Raw):
             for item in non_cached:
                 cache['%s' % item.pk] = item
             self.cache[rel_type] = cache
-            logging.info('Cache size for %s is now %s' % (rel_type, len(cache)))
         results = [cache.get('%s' % pk) for pk in pks]
         return results
 
@@ -305,7 +303,7 @@ class ToManyIdField(RelationIdField):
 
     def output(self, key, obj):
         related = self.get_related(key, obj)
-        if related:
+        if hasattr(related, 'values_list'):
             values = related.values_list(self.pk_field, flat=True)
             values = ['%s' % pk for pk in values]
             return values if values else None
@@ -314,12 +312,20 @@ class ToManyIdField(RelationIdField):
 
 class ToOneIdField(RelationIdField):
 
+    def __init__(self, *args, **kwargs):
+        self.simple_id_field = kwargs.pop('simple_id_field', None)
+        super(ToOneIdField, self).__init__(*args, **kwargs)
+
     def output(self, key, obj):
-        related = self.get_related(key, obj)
-        if related:
-            value = getattr(related, self.pk_field)
-            if value is not None:
-                return '%s' % value
+        value = None
+        if self.simple_id_field:
+            value = getattr(obj, self.simple_id_field, None)
+        else:
+            related = self.get_related(key, obj)
+            if related:
+                value = getattr(related, self.pk_field)
+        if value is not None:
+            return '%s' % value
         return None
 
 
