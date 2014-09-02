@@ -3,6 +3,7 @@ from __future__ import (unicode_literals, print_function, division,
                         absolute_import)
 
 import datetime
+import threading
 from collections import defaultdict, OrderedDict
 
 from marshmallow import serializer, Serializer, fields, class_registry
@@ -12,6 +13,9 @@ from django.core.exceptions import ImproperlyConfigured
 from .urls import (get_resource_url_template, get_resource_detail_url,
                    to_absolute_url, create_resource_view_name)
 from .json import dumps
+
+
+threadlocal = threading.local()
 
 
 class Registry(object):
@@ -58,6 +62,16 @@ class JsonApiSerializer(object):
         self.self_link = self_link
 
     def serialize(self, *args, **kwargs):
+        externalized_caching = kwargs.pop('externalized_caching', False)
+        if externalized_caching:
+            return self._do_serialize(*args, **kwargs)
+        setattr(threadlocal, 'cache', {})
+        try:
+            return self._do_serialize(*args, **kwargs)
+        finally:
+            delattr(threadlocal, 'cache')
+
+    def _do_serialize(self, *args, **kwargs):
         serializer_class = kwargs.pop('serializer', None)
         if not serializer_class:
             serializer_class = self.get_serializer_class(self.name)
@@ -133,7 +147,7 @@ class JsonApiSerializer(object):
             if not ids:
                 continue
             try:
-                instances = relationship_field.get_queryset(ids)
+                instances = relationship_field.get_instances(ids)
             except RelationIdField.Misconfigured:
                 s_name = serializer.__class__.__name__
                 msg_data = {'field_name': field_name, 'serializer': s_name}
@@ -143,7 +157,7 @@ class JsonApiSerializer(object):
                        'documents.') % msg_data
                 raise ImproperlyConfigured(msg)
             rel_serializer_class = self.get_serializer_class(rel_type)
-            rel_serializer = rel_serializer_class(instances.all(), many=True)
+            rel_serializer = rel_serializer_class(instances, many=True)
             serialized_data = rel_serializer.data
             linked[rel_type] = serialized_data
             # Now collect ids for "linked" links so we know which ones require
@@ -226,7 +240,33 @@ class RelationIdField(fields.Raw):
         self.method = kwargs.pop('method', None)
         self.model = kwargs.pop('model', None)
         self.queryset = kwargs.pop('queryset', None)
+        self.use_caching = kwargs.pop('use_caching', False)
         super(RelationIdField, self).__init__(*args, **kwargs)
+
+    @property
+    def cache(self):
+        return getattr(threadlocal, 'cache', None)
+
+    def get_instances(self, pks):
+        import logging
+        if not self.use_caching:
+            return self.get_queryset(pks).all()
+        non_cached_pks = []
+        rel_type = self.get_relation_type()
+        cache = self.cache.get(rel_type, None)
+        if not cache:
+            cache = {}
+        for pk in pks:
+            if not cache.get('%s' % pk):
+                non_cached_pks.append('%s' % pk)
+        if non_cached_pks:
+            non_cached = self.get_queryset(non_cached_pks).all()
+            for item in non_cached:
+                cache['%s' % item.pk] = item
+            self.cache[rel_type] = cache
+            logging.info('Cache size for %s is now %s' % (rel_type, len(cache)))
+        results = [cache.get('%s' % pk) for pk in pks]
+        return results
 
     def get_queryset(self, pks):
         queryset = None
