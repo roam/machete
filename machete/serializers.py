@@ -301,8 +301,14 @@ class RelationIdField(fields.Raw):
 
 class ToManyIdField(RelationIdField):
 
+    def __init__(self, *args, **kwargs):
+        self.assume_prefetched = kwargs.pop('assume_prefetched', False)
+        super(ToManyIdField, self).__init__(*args, **kwargs)
+
     def output(self, key, obj):
         related = self.get_related(key, obj)
+        if self.assume_prefetched:
+            return ['%s' % getattr(i, self.pk_field) for i in related.all()]
         if hasattr(related, 'values_list'):
             values = related.values_list(self.pk_field, flat=True)
             values = ['%s' % pk for pk in values]
