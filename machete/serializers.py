@@ -294,7 +294,7 @@ class RelationIdField(fields.Raw):
             method = getattr(self.parent, self.method)
             return method(obj, self.parent.context)
         related = self.get_value(key, obj)
-        if callable(related):
+        if callable(related) and not getattr(related, 'do_not_call_in_templates', False):
             return related()
         return related
 
