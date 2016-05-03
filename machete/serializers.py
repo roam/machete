@@ -6,7 +6,7 @@ import datetime
 import threading
 from collections import defaultdict, OrderedDict
 
-from marshmallow import serializer, Serializer, fields, class_registry
+from .vendor.marshmallow import serializer, Serializer, fields, class_registry
 from django.db.models import get_model, ForeignKey, ManyToManyField
 from django.core.exceptions import ImproperlyConfigured
 

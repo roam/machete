@@ -2,7 +2,7 @@
 from __future__ import (unicode_literals, print_function, division,
                         absolute_import)
 
-from marshmallow import fields, class_registry
+from machete.vendor.marshmallow import fields, class_registry
 from machete.serializers import (ContextSerializer, LinksField, ToOneIdField,
                                  ToManyIdField, AutoHrefField)
 
