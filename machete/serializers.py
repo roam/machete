@@ -7,8 +7,9 @@ import threading
 from collections import defaultdict, OrderedDict
 
 from .vendor.marshmallow import serializer, Serializer, fields, class_registry
-from django.db.models import get_model, ForeignKey, ManyToManyField
+from django.db.models import ForeignKey, ManyToManyField
 from django.core.exceptions import ImproperlyConfigured
+from django.apps.registry import apps
 
 from .urls import (get_resource_url_template, get_resource_detail_url,
                    to_absolute_url, create_resource_view_name)
@@ -275,7 +276,7 @@ class RelationIdField(fields.Raw):
         elif self.model is not None:
             if isinstance(self.model, basestring):
                 app, model_name = self.model.split('.')
-                queryset = get_model(app, model_name).objects
+                queryset = apps.get_model(app, model_name).objects
             else:
                 queryset = self.model.objects
         else:
