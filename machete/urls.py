@@ -3,7 +3,7 @@ from __future__ import (unicode_literals, print_function, division,
                         absolute_import)
 
 from django.core.urlresolvers import reverse
-from django.conf.urls import patterns, url as url_pattern
+from django.conf.urls import url as url_pattern
 
 
 def patterns_for(endpoint_cls, relationship_name=None, to_many=False, **initkwargs):
@@ -32,7 +32,8 @@ def patterns_for(endpoint_cls, relationship_name=None, to_many=False, **initkwar
         urls.append((detail_url, 'api_%s_detail' % resource_name))
     urls = [(r'^%s$' % url, name) for url, name in urls]
     urls = [url_pattern(url, endpoint, name=name) for url, name in urls]
-    return patterns('', *urls)
+    return urls
+
 
 def to_absolute_url(relative_url, request=None):
     if request:
