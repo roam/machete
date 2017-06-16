@@ -11,6 +11,7 @@ from django.db.models import ForeignKey, ManyToManyField
 from django.core.exceptions import ImproperlyConfigured
 from django.apps.registry import apps
 
+from . import compat
 from .urls import (get_resource_url_template, get_resource_detail_url,
                    to_absolute_url, create_resource_view_name)
 from .json import dumps
@@ -392,8 +393,8 @@ class Options(serializer.SerializerOpts):
             additional = getattr(meta, 'additional', None)
             additional = [] if not additional else list(additional)
             opts = model._meta
-            for name in opts.get_all_field_names():
-                field, model, direct, m2m = opts.get_field_by_name(name)
+            for name in compat.get_all_field_names(opts):
+                field, model, direct, m2m = compat.get_field_by_name(opts, name)
                 link = isinstance(field, (ForeignKey, ManyToManyField,))
                 if direct and not link:
                     additional.append(name)

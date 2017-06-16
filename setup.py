@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='machete-jsonapi',
-    version='0.3.2',
+    version='0.3.3',
     author='Kevin Wetzels',
     author_email='kevin@roam.be',
     url='https://github.com/roam/machete',

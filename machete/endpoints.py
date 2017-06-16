@@ -20,7 +20,7 @@ from .exceptions import (JsonApiError, MissingRequestBody, InvalidDataFormat,
                          IdMismatch, FormValidationError)
 from .utils import (RequestContext, RequestWithResourceContext, pluck_ids,
                     RequestPayloadDescriptor)
-from . import json
+from . import compat, json
 
 
 @contextmanager
@@ -448,7 +448,7 @@ class GetLinkedEndpoint(GetEndpoint):
         else:
             model = self.get_queryset().model
         meta = model._meta
-        field_object, model, direct, m2m = meta.get_field_by_name(rel_name)
+        field_object, model, direct, m2m = compat.get_field_by_name(meta, rel_name)
         if direct:
             return m2m
         return field_object.field.rel.multiple
