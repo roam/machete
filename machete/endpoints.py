@@ -199,7 +199,7 @@ class GetEndpoint(View):
         if isinstance(error, JsonApiError):
             error_object['message'] = '%s' % error
             return HttpResponse(self.create_json({'errors': [error_object]}), status=500)
-        raise error.__class__, error, traceback
+        raise ((error.__class__, error), traceback)
 
     def postprocess_response(self, response, data, response_data, collection):
         """
